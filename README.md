@@ -39,7 +39,7 @@ Strictly forbidden:
 - benefits management
 - analytics dashboards
 - onboarding workflow engines
-- notifications or reminders systems
+- notification or reminder systems
 - Zapier/webhook ecosystems
 - AI employee scoring/ranking
 - compliance automation
