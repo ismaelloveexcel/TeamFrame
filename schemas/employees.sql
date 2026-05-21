@@ -1,0 +1,1 @@
+-- Placeholder schema for TeamFrame employee directory domain.
