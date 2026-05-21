@@ -1,0 +1,1 @@
+-- Placeholder schema for TeamFrame onboarding documents domain.
