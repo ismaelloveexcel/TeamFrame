@@ -1,93 +1,214 @@
----
-description: TeamFrame V1 scope and anti-drift contract. Always apply to this repo.
-alwaysApply: true
----
-
 # TeamFrame — Cursor Rules
+# Version 2.1 | Updated 2026-05-22
 
-You are working inside the TeamFrame repository. Treat this file as a **hard contract**, not advice.
+---
 
-## What TeamFrame is
-A **lightweight HR structure system for startups with 6–25 employees.**
+## 0. PHASE GATE — READ THIS FIRST
 
-Core promise: *we install a working HR structure system in 48–72 hours.*
+TeamFrame uses a phase-based development model. **Do not build anything from a later phase while the current phase is unstable.**
 
-## Allowed V1 modules (this is the entire product)
-- employee directory
-- org chart / org visibility
-- onboarding document hub (upload, download, grouped export)
-- minimal leave tracking (request, approve, reject)
-- company updates (simple feed)
-- two constrained AI helpers in `/lib/ai`:
-  - `generateBio(cvText)`
-  - `generateContract(employeeData)`
+### Phase 1 — Foundation (current)
+Status: 🔴 In progress — do not expand until this is stable
 
-If a request is not covered by this list, it is **V2** and must be refused or scoped down.
+All 7 modules must be working, tested, and not crashing before any Phase 2 work begins:
+- [ ] Employee Directory
+- [ ] Org Chart
+- [ ] Onboarding Document Uploads
+- [ ] Leave Requests (submit / approve / reject)
+- [ ] Company Announcements
+- [ ] AI CV-to-Bio (`generateBio`)
+- [ ] AI Contract Template Generation (`generateContract`)
+- [ ] Dashboard (4 widgets: active employees, pending leaves, latest joiners, latest announcements)
 
-## Hard anti-drift bans
-Never propose or implement:
-- payroll, benefits, accounting, tax
-- compliance engines / dashboards / advisory
-- analytics dashboards, HR metrics, charts, trend lines, engagement scoring
-- AI HR advisor / chatbot / copilot
-- employee scoring, ranking, personality inference, performance reviews
-- compensation benchmarking
-- hiring pipelines / ATS
-- onboarding *workflows* (tasks, reminders, checklists, automation states, escalations)
-- approvals engine, e-signatures, document versioning / retention engines
-- notifications / reminders infrastructure
-- Zapier / webhooks / integrations marketplace
-- workflow orchestration, automation platforms, DAG engines
-- plugin / extension systems
-- enterprise admin systems, custom RBAC beyond `admin` / `employee`
-- multi-region / sharding / event sourcing / microservices
+**Phase 1 is stable when:** All modules load without errors, RBAC is enforced on every write, RLS policies are in place on every table, and no module breaks when another is used concurrently.
 
-If a feature resembles **enterprise HRIS**, **workflow automation**, or **AI assistant platform** — reject it.
+### Phase 2 — Planned (do not start yet)
+- Policies & Procedures library (upload, categorise, employee acknowledgement)
+- Notification preferences (in-app only, no external infra yet)
+- Basic reporting (headcount over time, leave summary)
 
-## Architecture enforcement (non-negotiable)
+### Phase 3 — Future (do not plan or scaffold yet)
+- Payroll integrations (read-only)
+- E-signature for contracts
+- Compliance tracking
+- Multi-tenant / SaaS billing
 
-Request flow:
+### Rule
+If a request is for Phase 2 or later, stop and say:
+> "Phase 1 isn't marked stable yet. Should we finish and stabilise Phase 1 first, or are you explicitly unlocking Phase 2?"
 
+This prevents the pattern of adding new features on top of unstable foundations — which is how projects get scrapped.
+
+---
+
+## 1. PHASE 1 SCOPE — WHAT TO BUILD NOW
+
+### Modules in scope
+- Employee Directory (CRUD, profile fields, avatar upload)
+- Org Chart (visual hierarchy from DB relationships)
+- Onboarding Document Uploads (file storage via Supabase Storage)
+- Leave Requests — minimal: submit, approve/reject, view status
+- Company Announcements (post, list, pin)
+- AI CV-to-Bio: `generateBio(cvText: string): string`
+- AI Contract Template Generation: `generateContract(employeeData: EmployeeData): string`
+- Dashboard: active employee count, pending leaves, latest joiners, latest announcements
+
+### Deferred to Phase 2+ (not blocked forever — just not yet)
+- Policies & Procedures → Phase 2
+- Notifications → Phase 2
+- Reporting / analytics → Phase 2
+- Payroll → Phase 3
+- E-signature → Phase 3
+- Compliance automation → Phase 3
+- AI HR advisor / chat → Phase 3
+- Multi-tenant billing → Phase 3
+
+**If asked to build something from Phase 2+, apply the Phase Gate check (Section 0) first.**
+
+---
+
+## 2. ARCHITECTURE — NON-NEGOTIABLE
+
+### Stack
+- Next.js App Router (TypeScript, strict mode)
+- Supabase (Postgres, Auth, Storage, RLS)
+- pnpm workspaces / Turborepo (if monorepo)
+- Tailwind CSS
+- Lemon Squeezy (payments, if added later — use shared package)
+
+### Data flow — always this, never shortcut
 ```
-Frontend → API Routes / Server Actions → RBAC Middleware → Service Layer → Database
+Frontend Component
+  → Server Action / API Route
+  → RBAC check (server-side, always)
+  → Service layer
+  → Supabase client
+  → Database
 ```
 
-- All authorization is enforced **server-side**.
-- Client role checks are UX hints only; they never grant access.
-- The Supabase **service role key** is server-only. Never reachable from the browser.
-- Compensation must never appear in org-chart or employee-scope queries.
+**Never call Supabase directly from client components.** Always go through a server action or API route.
 
-## RBAC contract
-- Exactly two roles: `admin`, `employee`. Do not invent more.
-- Services accept an explicit `Actor` argument (`{ authUserId, email, employeeId, role }`) and re-check authorization.
-- Sensitive admin actions write to `audit_logs`.
+### RBAC rules
+- Roles: `owner`, `admin`, `employee`
+- Every write operation checks role before executing
+- RLS policies must match the server-side checks — they are the last line of defense
+- Never use `service_role` key on the frontend
 
-## Auth contract (Magic Link only)
-- Authentication is Supabase **Magic Link only**. No passwords, no OAuth providers, no MFA in V1.
-- No sign-up form. Admins invite new employees; first magic-link login links the auth user to the employee record by email.
-- Role is set server-side (Supabase Dashboard or the bootstrap script). Never derived from client input or email domain.
-- Disabled in Supabase project settings: password login, open sign-ups, all OAuth providers.
+### AI constraints
+- Only 2 AI functions are allowed in Phase 1:
+  - `generateBio(cvText: string): string` — CV text in, bio paragraph out
+  - `generateContract(employeeData: EmployeeData): string` — structured data in, contract markdown out
+- No streaming, no chat UI, no AI-powered search
+- Both functions call a `/api/ai/*` route, never call OpenAI/Anthropic directly from components
 
-## AI contract
-- AI lives only in `/lib/ai`.
-- Exactly two server-side functions: `generateBio`, `generateContract`.
-- AI **never**: queries the DB, receives unscoped employee records, accesses compensation implicitly, scores/ranks, infers traits, or gives HR/legal/compliance advice.
-- Provider: OpenAI only. No multi-provider abstraction in V1.
+---
 
-## Engineering posture
-- Build for **10 paying customers**, 6–25 employees each, founder-led support.
-- Prefer explicitness over abstraction.
-- Avoid framework-heavy patterns.
-- No premature scalability. Premature scalability is scope drift.
-- Every feature must justify itself against the 72-hour setup promise.
+## 3. AUTONOMY — DO NOT WAIT FOR MANUAL REVIEW
 
-## Sanity check before any new feature
-1. Does this move setup closer to or further from 72-hour readiness?
-2. Does this reuse existing entities/tables?
-3. Does this introduce workflow automation, HR-ops logic, analytics, or AI scope creep?
-4. Can it ship without a new subsystem (queue, scheduler, background worker, plugin host)?
+Cursor must operate autonomously. Do not pause and say "review this with ChatGPT" or "check this manually." Complete the full task.
 
-If any answer trends toward complexity, treat it as **V2** and stop.
+### Before writing code — check these yourself
+1. **Supabase MCP**: Read the current schema. Never assume — always read it.
+2. **GitHub MCP**: Check the latest commit on `main` before starting.
+3. **Figma MCP**: If the task involves UI, fetch the relevant frame before writing components.
 
-## When in doubt
-Re-read `/docs/drift-guard.md`, `/docs/ai-boundaries.md`, and `/docs/rbac-rules.md`. The README is the human-facing summary of this contract.
+### After writing code — self-audit before marking done
+
+#### TypeScript
+- [ ] No `any` types — use proper interfaces or `unknown` with type guards
+- [ ] All async functions have explicit return types
+- [ ] No implicit `undefined` — use optional chaining and nullish coalescing
+
+#### Security
+- [ ] Every Server Action has RBAC check at the top
+- [ ] RLS policy exists for every new table (verify via Supabase MCP)
+- [ ] No secrets or tokens in client-side code
+- [ ] No `dangerouslySetInnerHTML` unless content is sanitized
+
+#### Database
+- [ ] New tables have RLS enabled (`ALTER TABLE ... ENABLE ROW LEVEL SECURITY`)
+- [ ] Migrations use `IF NOT EXISTS` for idempotency
+- [ ] Foreign keys have proper `ON DELETE` behavior defined
+- [ ] Indexes on columns used in WHERE clauses
+
+#### Error handling
+- [ ] All Server Actions return `{ data, error }` shape — never throw raw errors to client
+- [ ] Loading and error states handled in UI
+- [ ] File uploads validate type and size before hitting storage
+
+#### Accessibility
+- [ ] Interactive elements have `aria-label` if no visible text
+- [ ] Form inputs have associated `<label>` elements
+- [ ] Images have `alt` text
+
+#### Scope check
+- [ ] Nothing built is outside Phase 1 scope (re-read Section 1 if unsure)
+
+---
+
+## 4. BROWSER USAGE — USE PLAYWRIGHT MCP AUTONOMOUSLY
+
+When a task requires checking a live URL, reading a rendered page, or debugging a UI issue, use the Playwright MCP tools directly. Do not ask the user to check it manually.
+
+- `playwright_navigate` → open `http://localhost:3000` to check current app state
+- `playwright_screenshot` → capture UI to verify against Figma design
+- `playwright_click` / `playwright_fill` → test forms and interactions
+- Use after every UI change — don't ship without visual verification
+
+---
+
+## 5. FIGMA MCP — READ DESIGNS BEFORE BUILDING UI
+
+Always fetch the Figma design before writing components. Figma is the source of truth. Code follows Figma.
+
+---
+
+## 6. SUPABASE MCP — READ SCHEMA, WRITE MIGRATIONS
+
+Never hardcode column names or assume table structure. Always check first.
+
+Migration conventions:
+- Location: `supabase/migrations/`
+- Naming: `YYYYMMDDHHMMSS_description.sql`
+- Always idempotent: `CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`
+- Include RLS enable + policies in the same migration file as the table
+
+---
+
+## 7. GITHUB MCP — USE FOR COMMITS AND PRs
+
+Commit message format: `feat(scope): description` | `fix(scope): description` | `chore: description`
+
+---
+
+## 8. NOTION MCP — CHECK API VAULT FIRST
+
+Before asking for any API key: search Notion vault by service name. Only ask the user if not found.
+
+---
+
+## 9. TASK EXECUTION RULES
+
+### Starting a task
+1. Read relevant files via GitHub MCP
+2. Check Supabase schema if DB is involved
+3. Fetch Figma frame if UI is involved
+4. Plan the change in 3-5 bullet points before writing code
+
+### Finishing a task
+1. Run full self-audit checklist
+2. Use Playwright MCP to visually verify if UI was changed
+3. Commit via GitHub MCP with a descriptive message
+4. Report back: files changed + any follow-up needed
+
+---
+
+## 10. ANTI-PATTERNS
+
+- Never suggest features outside Phase 1 without checking the phase gate
+- Never create new abstractions unless 3+ files need them
+- Never install a package without checking if the functionality exists in the current stack
+- Never skip the RBAC check because "it's just a GET request"
+- Never leave a `TODO` comment — implement now or create a GitHub issue
+- Never use `console.log` in production code
+- Never ask the user to manually verify something you can check with a tool

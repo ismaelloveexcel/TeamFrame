@@ -1,34 +1,34 @@
 {
-  "mcpServers": {
-    "supabase": {
-      "command": "npx",
-      "args": ["-y", "@supabase/mcp-server-supabase@latest", "--access-token", "${SUPABASE_ACCESS_TOKEN}"],
-      "env": {
-        "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}"
-      }
-    },
-    "github": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
-      }
-    },
-    "figma": {
-      "command": "npx",
-      "args": ["-y", "figma-developer-mcp", "--figma-api-key", "${FIGMA_API_KEY}", "--stdio"]
-    },
-    "playwright": {
-      "command": "npx",
-      "args": ["-y", "@playwright/mcp@latest"],
-      "env": {}
-    },
-    "notion": {
-      "command": "npx",
-      "args": ["-y", "@notionhq/notion-mcp-server"],
-      "env": {
-        "OPENAPI_MCP_HEADERS": "{\"Authorization\": \"Bearer ${NOTION_TOKEN}\", \"Notion-Version\": \"2022-06-28\"}"
-      }
+    "mcpServers": {
+          "supabase": {
+                  "command": "npx",
+                  "args": ["-y", "@supabase/mcp-server-supabase@latest", "--access-token", "${SUPABASE_ACCESS_TOKEN}"],
+                  "env": {
+                            "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}"
+                  }
+          },
+          "github": {
+                  "command": "npx",
+                  "args": ["-y", "@modelcontextprotocol/server-github"],
+                  "env": {
+                            "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+                  }
+          },
+          "figma": {
+                  "command": "npx",
+                  "args": ["-y", "figma-developer-mcp", "--figma-api-key", "${FIGMA_API_KEY}", "--stdio"]
+          },
+          "playwright": {
+                  "command": "npx",
+                  "args": ["-y", "@playwright/mcp@latest"],
+                  "env": {}
+          },
+          "notion": {
+                  "command": "npx",
+                  "args": ["-y", "@notionhq/notion-mcp-server"],
+                  "env": {
+                            "OPENAPI_MCP_HEADERS": "{\"Authorization\": \"Bearer ${NOTION_TOKEN}\", \"Notion-Version\": \"2022-06-28\"}"
+                  }
+          }
     }
-  }
 }
