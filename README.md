@@ -223,8 +223,10 @@ Open `http://localhost:3030/auth`, enter the same email, click the link in your 
 Required GitHub protections for `main`:
 - pull request review required
 - direct pushes blocked
-- required status checks: `npm run typecheck`, `npm run lint`, `npm run build`
+- required status checks: `Gate Chain (Strict)`
 - linear history preferred
+
+Detailed branch protection setup: [`.github/branch-protection.md`](.github/branch-protection.md).
 
 ---
 

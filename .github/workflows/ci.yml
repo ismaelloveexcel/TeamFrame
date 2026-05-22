@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate-chain:
+    name: Gate Chain (Strict)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SITE_URL: ${{ secrets.SITE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Validate required CI secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            NEXT_PUBLIC_SUPABASE_URL
+            NEXT_PUBLIC_SUPABASE_ANON_KEY
+            SITE_URL
+            SUPABASE_SERVICE_ROLE_KEY
+            SUPABASE_DB_URL
+            OPENAI_API_KEY
+          )
+
+          for var in "${required[@]}"; do
+            if [ -z "${!var:-}" ]; then
+              echo "Missing required secret: $var"
+              exit 1
+            fi
+          done
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Gate 1 - db:apply
+        run: npm run db:apply
+
+      - name: Gate 2 - db:test:rls
+        run: npm run db:test:rls
+
+      - name: Gate 3 - db:test:stale
+        run: npm run db:test:stale
+
+      - name: Gate 4 - test:employees
+        run: npm run test:employees
+
+      - name: Gate 5 - test:security
+        run: npm run test:security
+
+      - name: Gate 6 - test:reliability
+        run: npm run test:reliability
+
+      - name: Gate 7 - typecheck
+        run: npm run typecheck
+
+      - name: Gate 8 - lint
+        run: npm run lint
+
+      - name: Gate 9 - build
+        run: npm run build
