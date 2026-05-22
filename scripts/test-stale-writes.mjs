@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import dotenv from "dotenv";
+import { getDbSnapshot, getDeterministicContext, snapshotDiff, writeReplayArtifact } from "./ci/context.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, "..", ".env.local") });
@@ -24,33 +25,38 @@ const client = new Client({
   connectionString,
   ssl: { rejectUnauthorized: false },
 });
+const ctx = getDeterministicContext("db-test-stale");
+let baselineSnapshot = null;
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
 async function main() {
+  baselineSnapshot = await getDbSnapshot(connectionString);
   await client.connect();
   await client.query("begin");
 
   try {
-    const tenantId = (await client.query("select gen_random_uuid() as id")).rows[0].id;
-    const employeeId = (await client.query("select gen_random_uuid() as id")).rows[0].id;
+    const tenantId = ctx.deterministicUuid("tenant");
+    const employeeId = ctx.deterministicUuid("employee");
+    const tenantSlug = ctx.deterministicSlug("concurrency-tenant-test");
+    const employeeEmail = ctx.deterministicEmail("concurrency");
 
     await client.query(
       `insert into companies (id, name, slug)
-       values ($1, 'Concurrency Tenant', 'concurrency-tenant-test')`,
-      [tenantId],
+       values ($1, 'Concurrency Tenant', $2)`,
+      [tenantId, tenantSlug],
     );
 
     const insert = await client.query(
       `insert into employees (
          id, tenant_id, full_name, email, role_title, department, timezone, status, setup_status
        ) values (
-         $1, $2, 'Concurrency User', 'concurrency@test.local', 'Engineer', 'Product', 'UTC', 'active', 'active'
+         $1, $2, 'Concurrency User', $3, 'Engineer', 'Product', 'UTC', 'active', 'active'
        )
        returning updated_at::text as updated_at_text`,
-      [employeeId, tenantId],
+      [employeeId, tenantId, employeeEmail],
     );
 
     const expectedUpdatedAt = insert.rows[0].updated_at_text;
@@ -116,5 +122,19 @@ async function main() {
 
 main().catch((err) => {
   console.error(`✗ stale-write smoke tests failed: ${err.message}`);
-  process.exit(1);
+  getDbSnapshot(connectionString)
+    .then((afterSnapshot) => {
+      const replayPath = writeReplayArtifact({
+        testId: "db-test-stale",
+        gate: "db:test:stale",
+        command: process.platform === "win32" ? "cmd.exe" : "npm",
+        args: process.platform === "win32" ? ["/d", "/s", "/c", "npm run db:test:stale"] : ["run", "db:test:stale"],
+        actorContext: { actor: "stale-suite", tenant: process.env.TEST_TENANT_SEED || "seeded" },
+        dbSnapshotDiff: snapshotDiff(baselineSnapshot, afterSnapshot),
+        error: err.message,
+      });
+      console.error(`Replay artifact: ${replayPath}`);
+      process.exit(1);
+    })
+    .catch(() => process.exit(1));
 });

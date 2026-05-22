@@ -1,9 +1,9 @@
-import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import pg from "pg";
 import dotenv from "dotenv";
+import { getDeterministicContext } from "../../scripts/ci/context.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, "..", "..", ".env.local") });
@@ -21,6 +21,7 @@ const supabase = createSupabaseClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 const { Client } = pg;
+const ctx = getDeterministicContext("reliability-session-boundaries-v2");
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -47,14 +48,14 @@ async function expectDenied(client, claims, fn, message) {
 }
 
 async function main() {
-  const tenantA = randomUUID();
-  const tenantB = randomUUID();
+  const tenantA = ctx.deterministicUuid("tenant-a");
+  const tenantB = ctx.deterministicUuid("tenant-b");
 
-  const adminAuthId = randomUUID();
-  const employeeAuthId = randomUUID();
+  const adminAuthId = ctx.deterministicUuid("admin-auth");
+  const employeeAuthId = ctx.deterministicUuid("employee-auth");
 
-  const adminEmail = `session-admin-${randomUUID().slice(0, 8)}@reliability.test`;
-  const employeeEmail = `session-employee-${randomUUID().slice(0, 8)}@reliability.test`;
+  const adminEmail = ctx.deterministicEmail("session-admin", "reliability.test");
+  const employeeEmail = ctx.deterministicEmail("session-employee", "reliability.test");
 
   const adminClaims = { email: adminEmail, app_metadata: { role: "admin", tenant_id: tenantA } };
   const employeeClaims = { email: employeeEmail, app_metadata: { role: "employee", tenant_id: tenantA } };
@@ -97,7 +98,7 @@ async function main() {
         {
           tenant_id: tenantB,
           full_name: "Other Tenant Employee",
-          email: `session-other-${randomUUID().slice(0, 8)}@reliability.test`,
+          email: ctx.deterministicEmail("session-other", "reliability.test"),
           role_title: "Engineer",
           department: "Product",
           timezone: "UTC",
@@ -140,7 +141,7 @@ async function main() {
         await client.query(
           `insert into employees (tenant_id, full_name, email, role_title, department, timezone, status, setup_status)
            values ($1, 'Replay Spoof', $2, 'Ops', 'Operations', 'UTC', 'active', 'ready')`,
-          [tenantB, `replay-${randomUUID().slice(0, 8)}@reliability.test`],
+          [tenantB, ctx.deterministicEmail("replay", "reliability.test")],
         );
       },
       "replayed admin session should not write cross-tenant rows",

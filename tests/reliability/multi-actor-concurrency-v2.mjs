@@ -1,9 +1,9 @@
-import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import pg from "pg";
 import dotenv from "dotenv";
+import { getDeterministicContext } from "../../scripts/ci/context.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, "..", "..", ".env.local") });
@@ -21,6 +21,7 @@ const supabase = createSupabaseClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 const { Client } = pg;
+const ctx = getDeterministicContext("reliability-multi-actor-v2");
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -45,13 +46,13 @@ async function expectDenied(client, claims, sql, params, message) {
 }
 
 async function main() {
-  const tenantA = randomUUID();
-  const tenantB = randomUUID();
+  const tenantA = ctx.deterministicUuid("tenant-a");
+  const tenantB = ctx.deterministicUuid("tenant-b");
 
-  const adminEmail = `admin-${randomUUID().slice(0, 8)}@reliability.test`;
-  const employeeEmail = `employee-${randomUUID().slice(0, 8)}@reliability.test`;
-  const adminAuthId = randomUUID();
-  const employeeAuthId = randomUUID();
+  const adminEmail = ctx.deterministicEmail("admin", "reliability.test");
+  const employeeEmail = ctx.deterministicEmail("employee", "reliability.test");
+  const adminAuthId = ctx.deterministicUuid("admin-auth");
+  const employeeAuthId = ctx.deterministicUuid("employee-auth");
 
   const adminClaims = { email: adminEmail, app_metadata: { role: "admin", tenant_id: tenantA } };
   const employeeClaims = { email: employeeEmail, app_metadata: { role: "employee", tenant_id: tenantA } };
@@ -99,7 +100,7 @@ async function main() {
         {
           tenant_id: tenantB,
           full_name: "Cross Tenant Employee",
-          email: `cross-${randomUUID().slice(0, 8)}@reliability.test`,
+          email: ctx.deterministicEmail("cross", "reliability.test"),
           role_title: "Engineer",
           department: "Product",
           timezone: "UTC",
@@ -118,7 +119,7 @@ async function main() {
       adminClaims,
       `insert into employees (tenant_id, full_name, email, role_title, department, timezone, status, setup_status)
        values ($1, 'Spoof Attempt', $2, 'Ops', 'Operations', 'UTC', 'active', 'ready')`,
-      [tenantB, `spoof-${randomUUID().slice(0, 8)}@reliability.test`],
+      [tenantB, ctx.deterministicEmail("spoof", "reliability.test")],
       "admin cross-tenant insert should be denied",
     );
 

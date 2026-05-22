@@ -1,9 +1,9 @@
-import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import pg from "pg";
 import dotenv from "dotenv";
+import { getDeterministicContext } from "../../scripts/ci/context.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, "..", "..", ".env.local") });
@@ -21,6 +21,7 @@ const supabase = createSupabaseClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 const { Client } = pg;
+const ctx = getDeterministicContext("reliability-failure-injection-v2");
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -33,11 +34,11 @@ async function asActor(client, claims) {
 }
 
 async function main() {
-  const tenantId = randomUUID();
-  const adminAuthId = randomUUID();
-  const adminEmail = `failure-admin-${randomUUID().slice(0, 8)}@reliability.test`;
-  const targetEmail = `failure-target-${randomUUID().slice(0, 8)}@reliability.test`;
-  const actionType = `employee.updated.failure.${randomUUID().slice(0, 8)}`;
+  const tenantId = ctx.deterministicUuid("tenant");
+  const adminAuthId = ctx.deterministicUuid("admin-auth");
+  const adminEmail = ctx.deterministicEmail("failure-admin", "reliability.test");
+  const targetEmail = ctx.deterministicEmail("failure-target", "reliability.test");
+  const actionType = `employee.updated.failure.${ctx.deterministicToken("action", 8)}`;
 
   const claims = { email: adminEmail, app_metadata: { role: "admin", tenant_id: tenantId } };
 

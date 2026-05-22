@@ -22,6 +22,7 @@ jobs:
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       RELEASE_TAG: ${{ github.ref_name }}
+      SEED: teamframe-release-v2
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -66,6 +67,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Initialize deterministic seed context
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "SEED=${SEED}" >> "$GITHUB_ENV"
+          echo "TEST_RUN_ID=release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
+          echo "TEST_TENANT_SEED=${SEED}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
+
       - name: Gate 1 - db:apply
         run: npm run db:apply
 
@@ -93,6 +102,14 @@ jobs:
       - name: Gate 9 - build
         run: npm run build
 
+      - name: Upload replay artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-replay-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/replay/*.json
+          if-no-files-found: ignore
+
       - name: Release validation summary
         shell: bash
         run: |
@@ -102,4 +119,7 @@ jobs:
             echo "- Commit: ${GITHUB_SHA}"
             echo "- Result: PASS"
             echo "- Gate chain: strict sequential execution enforced"
+            echo "- Seed: ${SEED}"
+            echo "- Test Run ID: ${TEST_RUN_ID}"
+            echo "- Test Tenant Seed: ${TEST_TENANT_SEED}"
           } >> "$GITHUB_STEP_SUMMARY"

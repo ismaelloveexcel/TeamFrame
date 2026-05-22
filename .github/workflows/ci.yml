@@ -29,6 +29,7 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      SEED: teamframe-ci-v2
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,6 +63,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Initialize deterministic seed context
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "SEED=${SEED}" >> "$GITHUB_ENV"
+          echo "TEST_RUN_ID=gh-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
+
+      - name: Configure DB isolation context
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "TEST_TENANT_SEED=${SEED}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
+
       - name: Gate 1 - db:apply
         run: npm run db:apply
 
@@ -88,3 +102,27 @@ jobs:
 
       - name: Gate 9 - build
         run: npm run build
+
+      - name: Upload replay artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: replay-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/replay/*.json
+          if-no-files-found: ignore
+
+      - name: CI summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## CI Hardening Summary"
+            echo "- Workflow: Gate Chain (Strict)"
+            echo "- Seed: ${SEED}"
+            echo "- Test Run ID: ${TEST_RUN_ID}"
+            echo "- Test Tenant Seed: ${TEST_TENANT_SEED}"
+            echo "- Result: ${{ job.status }}"
+            if [ "${{ job.status }}" != "success" ]; then
+              echo "- Replay artifacts: uploaded if present in artifacts/replay"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

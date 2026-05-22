@@ -8,6 +8,8 @@
     "dev": "next dev -p 3030",
     "build": "next build",
     "ci:full": "node scripts/run-ci.mjs",
+    "test:deterministic": "node scripts/test-deterministic.mjs",
+    "test:replay": "node scripts/test-replay.mjs",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",

@@ -11,6 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import dotenv from "dotenv";
+import { getDbSnapshot, getDeterministicContext, snapshotDiff, writeReplayArtifact } from "./ci/context.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, "..", ".env.local") });
@@ -26,6 +27,8 @@ const client = new Client({
   connectionString,
   ssl: { rejectUnauthorized: false },
 });
+const ctx = getDeterministicContext("test-employees");
+let baselineSnapshot = null;
 
 function assert(condition, message) {
   if (!condition) {
@@ -54,17 +57,19 @@ async function expectDenied(message, fn) {
 }
 
 async function main() {
+  baselineSnapshot = await getDbSnapshot(connectionString);
   await client.connect();
   await client.query("begin");
   let step = "init";
 
   try {
     step = "create-fixtures";
-    const tenantA = (await client.query("select gen_random_uuid() as id")).rows[0].id;
-    const tenantB = (await client.query("select gen_random_uuid() as id")).rows[0].id;
-    const suffix = tenantA.slice(0, 8);
-    const adminEmail = `admin-employee-test-a-${suffix}@local.test`;
-    const employeeEmail = `employee-test-a-${suffix}@local.test`;
+    const tenantA = ctx.deterministicUuid("tenant-a");
+    const tenantB = ctx.deterministicUuid("tenant-b");
+    const suffix = ctx.deterministicToken("suffix", 8);
+    const adminEmail = ctx.deterministicEmail("admin-employee-test-a");
+    const employeeEmail = ctx.deterministicEmail("employee-test-a");
+    const tenantBEmail = ctx.deterministicEmail("employee-test-b");
 
     await client.query(
       `insert into companies (id, name, slug)
@@ -74,12 +79,12 @@ async function main() {
       [tenantA, tenantB, `employee-test-a-${suffix}`, `employee-test-b-${suffix}`],
     );
 
-    const adminAuthId = (await client.query("select gen_random_uuid() as id")).rows[0].id;
-    const employeeAuthId = (await client.query("select gen_random_uuid() as id")).rows[0].id;
+    const adminAuthId = ctx.deterministicUuid("admin-auth-id");
+    const employeeAuthId = ctx.deterministicUuid("employee-auth-id");
 
-    const adminEmployeeId = (await client.query("select gen_random_uuid() as id")).rows[0].id;
-    const employeeId = (await client.query("select gen_random_uuid() as id")).rows[0].id;
-    const otherTenantEmployeeId = (await client.query("select gen_random_uuid() as id")).rows[0].id;
+    const adminEmployeeId = ctx.deterministicUuid("admin-employee-id");
+    const employeeId = ctx.deterministicUuid("employee-id");
+    const otherTenantEmployeeId = ctx.deterministicUuid("other-tenant-employee-id");
 
     await client.query(
       `insert into employees (
@@ -87,7 +92,7 @@ async function main() {
        ) values
          ($1, $2, $3, 'Tenant A Admin', $9, 'Founder', 'Leadership', 'UTC', 'active', 'active'),
          ($4, $5, $6, 'Tenant A Employee', $10, 'Engineer', 'Product', 'UTC', 'active', 'active'),
-         ($7, $8, null, 'Tenant B Employee', 'employee-test-b@local.test', 'Engineer', 'Product', 'UTC', 'active', 'active')`,
+         ($7, $8, null, 'Tenant B Employee', $11, 'Engineer', 'Product', 'UTC', 'active', 'active')`,
       [
         adminEmployeeId,
         tenantA,
@@ -99,6 +104,7 @@ async function main() {
         tenantB,
         adminEmail,
         employeeEmail,
+        tenantBEmail,
       ],
     );
 
@@ -270,5 +276,19 @@ main().catch((err) => {
   if (err?.stack) {
     console.error(err.stack);
   }
-  process.exit(1);
+  getDbSnapshot(connectionString)
+    .then((afterSnapshot) => {
+      const replayPath = writeReplayArtifact({
+        testId: "test-employees",
+        gate: "test:employees",
+        command: process.platform === "win32" ? "cmd.exe" : "npm",
+        args: process.platform === "win32" ? ["/d", "/s", "/c", "npm run test:employees"] : ["run", "test:employees"],
+        actorContext: { actor: "employee-suite", tenant: process.env.TEST_TENANT_SEED || "seeded" },
+        dbSnapshotDiff: snapshotDiff(baselineSnapshot, afterSnapshot),
+        error: err.message,
+      });
+      console.error(`Replay artifact: ${replayPath}`);
+      process.exit(1);
+    })
+    .catch(() => process.exit(1));
 });

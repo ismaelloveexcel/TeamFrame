@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import dotenv from "dotenv";
+import { getDbSnapshot, getDeterministicContext, snapshotDiff, writeReplayArtifact } from "./ci/context.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, "..", ".env.local") });
@@ -24,6 +25,8 @@ const client = new Client({
   connectionString,
   ssl: { rejectUnauthorized: false },
 });
+const ctx = getDeterministicContext("db-test-rls");
+let baselineSnapshot = null;
 
 function assert(condition, message) {
   if (!condition) {
@@ -39,41 +42,50 @@ async function runAs(claims, fn) {
 }
 
 async function main() {
+  baselineSnapshot = await getDbSnapshot(connectionString);
   await client.connect();
   await client.query("begin");
 
   try {
-    const t1 = (await client.query("select gen_random_uuid() as id")).rows[0].id;
-    const t2 = (await client.query("select gen_random_uuid() as id")).rows[0].id;
-    const admin1UserId = (await client.query("select gen_random_uuid() as id")).rows[0].id;
-    const admin2UserId = (await client.query("select gen_random_uuid() as id")).rows[0].id;
-    const emp1UserId = (await client.query("select gen_random_uuid() as id")).rows[0].id;
+    const t1 = ctx.deterministicUuid("tenant-a");
+    const t2 = ctx.deterministicUuid("tenant-b");
+    const admin1UserId = ctx.deterministicUuid("tenant-a-admin-user");
+    const admin2UserId = ctx.deterministicUuid("tenant-b-admin-user");
+    const emp1UserId = ctx.deterministicUuid("tenant-a-employee-user");
+
+    const tenantASlug = ctx.deterministicSlug("tenant-a-test");
+    const tenantBSlug = ctx.deterministicSlug("tenant-b-test");
+    const adminAEmail = ctx.deterministicEmail("admin-a");
+    const adminBEmail = ctx.deterministicEmail("admin-b");
+    const employeeAEmail = ctx.deterministicEmail("employee-a");
+    const blockedEmail = ctx.deterministicEmail("blocked");
+    const insertOkEmail = ctx.deterministicEmail("insert-ok");
 
     await client.query(
       `insert into companies (id, name, slug)
        values
-         ($1, 'Tenant A', 'tenant-a-test'),
-         ($2, 'Tenant B', 'tenant-b-test')`,
-      [t1, t2],
+         ($1, 'Tenant A', $3),
+         ($2, 'Tenant B', $4)`,
+      [t1, t2, tenantASlug, tenantBSlug],
     );
 
-    const admin1EmpId = (await client.query("select gen_random_uuid() as id")).rows[0].id;
-    const admin2EmpId = (await client.query("select gen_random_uuid() as id")).rows[0].id;
-    const employee1Id = (await client.query("select gen_random_uuid() as id")).rows[0].id;
+    const admin1EmpId = ctx.deterministicUuid("tenant-a-admin-employee");
+    const admin2EmpId = ctx.deterministicUuid("tenant-b-admin-employee");
+    const employee1Id = ctx.deterministicUuid("tenant-a-employee");
 
     await client.query(
       `insert into employees (
         id, tenant_id, auth_user_id, full_name, email, role_title, department, timezone, status, setup_status
       ) values
-        ($1, $2, $3, 'Tenant A Admin', 'admin-a@test.local', 'Founder', 'Leadership', 'UTC', 'active', 'active'),
-        ($4, $5, $6, 'Tenant B Admin', 'admin-b@test.local', 'Founder', 'Leadership', 'UTC', 'active', 'active'),
-        ($7, $8, $9, 'Tenant A Employee', 'employee-a@test.local', 'Engineer', 'Product', 'UTC', 'active', 'active')`,
-      [admin1EmpId, t1, admin1UserId, admin2EmpId, t2, admin2UserId, employee1Id, t1, emp1UserId],
+        ($1, $2, $3, 'Tenant A Admin', $10, 'Founder', 'Leadership', 'UTC', 'active', 'active'),
+        ($4, $5, $6, 'Tenant B Admin', $11, 'Founder', 'Leadership', 'UTC', 'active', 'active'),
+        ($7, $8, $9, 'Tenant A Employee', $12, 'Engineer', 'Product', 'UTC', 'active', 'active')`,
+      [admin1EmpId, t1, admin1UserId, admin2EmpId, t2, admin2UserId, employee1Id, t1, emp1UserId, adminAEmail, adminBEmail, employeeAEmail],
     );
 
     await runAs(
       {
-        email: "admin-a@test.local",
+        email: adminAEmail,
         app_metadata: { role: "admin" },
       },
       async () => {
@@ -87,7 +99,7 @@ async function main() {
 
     await runAs(
       {
-        email: "employee-a@test.local",
+        email: employeeAEmail,
         app_metadata: { role: "employee" },
       },
       async () => {
@@ -98,7 +110,7 @@ async function main() {
 
     await runAs(
       {
-        email: "employee-a@test.local",
+        email: employeeAEmail,
         app_metadata: { role: "employee" },
       },
       async () => {
@@ -108,8 +120,8 @@ async function main() {
           await client.query(
             `insert into employees (
               tenant_id, full_name, email, role_title, department, timezone, status, setup_status
-            ) values ($1, 'Nope', 'blocked@test.local', 'Engineer', 'Product', 'UTC', 'active', 'ready')`,
-            [t1],
+            ) values ($1, 'Nope', $2, 'Engineer', 'Product', 'UTC', 'active', 'ready')`,
+            [t1, blockedEmail],
           );
         } catch {
           await client.query("rollback to savepoint employee_insert_attempt");
@@ -122,15 +134,15 @@ async function main() {
 
     await runAs(
       {
-        email: "admin-a@test.local",
+        email: adminAEmail,
         app_metadata: { role: "admin" },
       },
       async () => {
         await client.query(
           `insert into employees (
             tenant_id, full_name, email, role_title, department, timezone, status, setup_status
-          ) values ($1, 'Admin Insert OK', 'insert-ok@test.local', 'Operator', 'Ops', 'UTC', 'active', 'ready')`,
-          [t1],
+          ) values ($1, 'Admin Insert OK', $2, 'Operator', 'Ops', 'UTC', 'active', 'ready')`,
+          [t1, insertOkEmail],
         );
       },
     );
@@ -144,5 +156,19 @@ async function main() {
 
 main().catch((err) => {
   console.error(`✗ RLS smoke tests failed: ${err.message}`);
-  process.exit(1);
+  getDbSnapshot(connectionString)
+    .then((afterSnapshot) => {
+      const replayPath = writeReplayArtifact({
+        testId: "db-test-rls",
+        gate: "db:test:rls",
+        command: process.platform === "win32" ? "cmd.exe" : "npm",
+        args: process.platform === "win32" ? ["/d", "/s", "/c", "npm run db:test:rls"] : ["run", "db:test:rls"],
+        actorContext: { actor: "rls-suite", tenant: process.env.TEST_TENANT_SEED || "seeded" },
+        dbSnapshotDiff: snapshotDiff(baselineSnapshot, afterSnapshot),
+        error: err.message,
+      });
+      console.error(`Replay artifact: ${replayPath}`);
+      process.exit(1);
+    })
+    .catch(() => process.exit(1));
 });
