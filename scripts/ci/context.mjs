@@ -32,13 +32,18 @@ function toSlug(value) {
 }
 
 export function getDeterministicContext(scope) {
-  const seed = process.env.SEED || "teamframe-ci-seed-v2";
-  const testRunId = process.env.TEST_RUN_ID || `local-${Date.now()}`;
+  const seed = process.env.CI_SEED || process.env.SEED || "teamframe-ci-seed-v2";
+  const testRunId = process.env.CI_RUN_ID || process.env.TEST_RUN_ID || `local-${Date.now()}`;
   const tenantSeed = process.env.TEST_TENANT_SEED || `${seed}-${testRunId}`;
+  const runMode = process.env.CI_MODE || process.env.RUN_MODE || "deterministic";
 
+  process.env.CI_SEED = seed;
+  process.env.CI_RUN_ID = testRunId;
+  process.env.CI_MODE = runMode;
   process.env.SEED = seed;
   process.env.TEST_RUN_ID = testRunId;
   process.env.TEST_TENANT_SEED = tenantSeed;
+  process.env.RUN_MODE = runMode;
 
   const base = `${seed}|${testRunId}|${tenantSeed}|${scope}`;
   const random = mulberry32(hash32(base));
@@ -71,6 +76,7 @@ export function getDeterministicContext(scope) {
     seed,
     testRunId,
     tenantSeed,
+    runMode,
     deterministicUuid,
     deterministicToken,
     deterministicEmail,
@@ -115,10 +121,12 @@ export function snapshotDiff(before, after) {
   }
 
   const diff = {};
-  const keys = new Set([...Object.keys(before.tables), ...Object.keys(after.tables)]);
+  const beforeTables = before.tables || {};
+  const afterTables = after.tables || {};
+  const keys = new Set([...Object.keys(beforeTables), ...Object.keys(afterTables)]);
   for (const key of keys) {
-    const b = before.tables[key] ?? 0;
-    const a = after.tables[key] ?? 0;
+    const b = beforeTables[key] ?? 0;
+    const a = afterTables[key] ?? 0;
     diff[key] = {
       before: b,
       after: a,
@@ -130,7 +138,8 @@ export function snapshotDiff(before, after) {
 }
 
 export function writeReplayArtifact(payload) {
-  const dir = join(process.cwd(), "artifacts", "replay");
+  const runId = process.env.TEST_RUN_ID || process.env.CI_RUN_ID || "unknown-run";
+  const dir = join(process.cwd(), ".ci", "replays", runId);
   mkdirSync(dir, { recursive: true });
 
   const slug = toSlug(payload.testId || payload.gate || "unknown-test");
@@ -139,6 +148,9 @@ export function writeReplayArtifact(payload) {
 
   const artifact = {
     generatedAt: new Date().toISOString(),
+    runMode: process.env.RUN_MODE || process.env.CI_MODE,
+    ciSeed: process.env.CI_SEED,
+    ciRunId: process.env.CI_RUN_ID,
     seed: process.env.SEED,
     testRunId: process.env.TEST_RUN_ID,
     testTenantSeed: process.env.TEST_TENANT_SEED,

@@ -21,8 +21,8 @@ AI in TeamFrame must **never**:
 - query the database directly (no Supabase client inside `/lib/ai`)
 - receive an unscoped employee object
 - read compensation unless `generateContract` is explicitly invoked with it
-- act as an HR advisor or chatbot
-- generate compliance, legal, or tax advice
+- act as an HR, payroll, or finance advisor or chatbot
+- generate payroll, compliance, legal, or tax advice
 - score, rank, or compare employees
 - infer personality, performance, sentiment, or fit
 - generate analytics or insights

@@ -4,7 +4,7 @@ This document defines the canonical operational meaning of core TeamFrame concep
 
 Purpose:
 - Prevent semantic drift across domains, features, and AI-assisted implementation.
-- Keep product behavior aligned with TeamFrame's startup operations positioning.
+- Keep product behavior aligned with TeamFrame's finance-first payroll input positioning.
 
 This file is the semantic source of truth.
 
@@ -29,6 +29,21 @@ Operationally complete plus failure-mode/adversarial validation (concurrency con
 
 ## Canonical Definitions
 
+### Employee Data Layer
+The canonical, structured employee dataset used to prepare payroll inputs for finance.
+
+### Payroll Snapshot
+A time-based freeze of employee payroll input data for a payroll cycle, finance review, or export handoff.
+
+### Payroll-Ready Record
+An employee record that satisfies the required payroll fields and passes completeness review for export.
+
+### Finance Export
+A payroll-ready CSV/Excel output intended for finance consumption outside TeamFrame.
+
+### Export-First Operations Layer
+An operating model where TeamFrame's primary outcome is validated payroll input data prepared for finance handoff, not payroll execution or HR workflow orchestration.
+
 ### Tenant
 A startup company workspace with isolated data boundaries.
 
@@ -50,14 +65,35 @@ An immutable acceptance event by a specific employee for a specific policy versi
 ### Archive
 A record state hidden from operational default views but retained for history and audit.
 
+## Language Lock
+
+Use these product terms consistently:
+- payroll input layer
+- finance-ready employee dataset
+- payroll snapshot
+- payroll-ready record
+- finance export
+- export readiness
+
+Do not describe TeamFrame as:
+- payroll software or payroll execution infrastructure
+- HRIS or people operations suite
+- compliance engine or tax engine
+- workforce management platform
+
+UI and documentation language must remain startup-finance-ops oriented and lightweight. Any wording that shifts posture toward enterprise HR workflows or process-heavy suite behavior is drift and must be corrected.
+
 ## Semantic Invariants
 
 1. All operational data is tenant-scoped.
-2. Policies and procedures are never hard-deleted.
-3. Acknowledgements are immutable history.
-4. Leave history is immutable after final decision.
-5. Business transitions are defined in domain contracts, not ad hoc in handlers.
-6. Handlers, UI behavior, validations, and tests derive from domain contracts.
+2. Employee data is the source of truth for payroll inputs.
+3. Payroll snapshots are immutable once frozen for a payroll cycle or finance review window.
+4. A payroll-ready record must account for name, designation, department, salary, currency, pay frequency, bank account, bank name, bank code, and employment status.
+5. Policies and procedures are never hard-deleted.
+6. Acknowledgements are immutable history.
+7. Leave history is immutable after final decision.
+8. Business transitions are defined in domain contracts, not ad hoc in handlers.
+9. Handlers, UI behavior, validations, and tests derive from domain contracts.
 
 ## State Model Requirements
 
@@ -131,6 +167,23 @@ Transitions fail closed on stale state.
 Every accepted feature must reduce startup admin friction within one to two interactions.
 
 If configuration complexity exceeds immediate operational value, reject or defer.
+
+## UX Lock Principles
+
+Always optimize for:
+- fast setup
+- low friction
+- export readiness
+- validation clarity
+- operational trust
+- one-primary-action screens
+- inline correction over modal-heavy workflows
+
+Never optimize toward:
+- enterprise configuration systems
+- admin-heavy workflow builders
+- feature-dense HR suites
+- deep reporting ecosystems
 
 ## Anti-Creep Boundaries
 

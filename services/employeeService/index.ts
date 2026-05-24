@@ -7,8 +7,8 @@
  *  - compensation lives in a separate, admin-only path (see docs/rbac-rules.md)
  *  - audit-logged on every destructive mutation
  *
- * No business logic in this stub yet — these are the locked signatures the
- * services layer will fulfill in step 3 of the build plan (Employee CRUD).
+ * Employee CRUD and tenant-scoped access checks are implemented here.
+ * Keep all authorization and audit behavior server-side.
  */
 
 import "server-only";
@@ -43,6 +43,17 @@ export type EmployeeFullRecord = OrgChartEmployee & {
   updated_at: string;
 };
 
+export type PayrollReadinessRecord = EmployeeFullRecord & {
+  base_salary: number | null;
+  currency: string | null;
+  pay_frequency: string | null;
+  bank_name: string | null;
+  bank_account: string | null;
+  bank_code: string | null;
+  readiness_issues: string[];
+  ready_for_finance_export: boolean;
+};
+
 export async function listEmployeesForAdmin(actor: Actor): Promise<EmployeeFullRecord[]> {
   requireAdmin(actor);
   const tenantId = requireTenant(actor);
@@ -61,6 +72,151 @@ export async function listEmployeesForAdmin(actor: Actor): Promise<EmployeeFullR
   }
 
   return ((data ?? []) as EmployeeRow[]).map(toEmployeeFullRecord);
+}
+
+type CompensationRow = {
+  employee_id: string;
+  base_salary: number | null;
+  currency: string | null;
+};
+
+type EmployeeProfileRow = {
+  employee_id: string;
+  personal_details: Record<string, unknown> | null;
+};
+
+function readStringField(
+  details: Record<string, unknown> | null,
+  fieldNames: string[],
+): string | null {
+  if (!details) return null;
+  for (const fieldName of fieldNames) {
+    const value = details[fieldName];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function buildReadinessIssues(input: {
+  employee: EmployeeFullRecord;
+  baseSalary: number | null;
+  currency: string | null;
+  payFrequency: string | null;
+  bankName: string | null;
+  bankAccount: string | null;
+  bankCode: string | null;
+}): string[] {
+  const issues: string[] = [];
+
+  if (input.employee.status === "inactive") {
+    issues.push("Inactive employee included in export scope");
+  }
+  if (input.employee.setup_status === "incomplete") {
+    issues.push("Setup incomplete");
+  }
+  if (input.baseSalary === null || Number.isNaN(input.baseSalary)) {
+    issues.push("Missing salary");
+  }
+  if (!input.currency) {
+    issues.push("Missing currency");
+  }
+  if (!input.payFrequency) {
+    issues.push("Missing pay frequency");
+  }
+  if (!input.bankName) {
+    issues.push("Missing bank details (bank name)");
+  }
+  if (!input.bankAccount) {
+    issues.push("Missing bank details (bank account)");
+  }
+  if (!input.bankCode) {
+    issues.push("Missing bank details (bank code)");
+  }
+
+  return issues;
+}
+
+export async function listPayrollReadinessForAdmin(
+  actor: Actor,
+): Promise<PayrollReadinessRecord[]> {
+  requireAdmin(actor);
+  const tenantId = requireTenant(actor);
+  const employees = await listEmployeesForAdmin(actor);
+
+  if (employees.length === 0) {
+    return [];
+  }
+
+  const employeeIds = employees.map((employee) => employee.id);
+  const supabase = createServiceRoleClient();
+
+  const [{ data: compensationData, error: compensationError }, { data: profileData, error: profileError }] =
+    await Promise.all([
+      supabase
+        .from("compensation")
+        .select("employee_id, base_salary, currency")
+        .eq("tenant_id", tenantId)
+        .in("employee_id", employeeIds),
+      supabase
+        .from("employee_profiles")
+        .select("employee_id, personal_details")
+        .eq("tenant_id", tenantId)
+        .in("employee_id", employeeIds),
+    ]);
+
+  if (compensationError) {
+    throw new Error(`PAYROLL_READINESS_COMPENSATION_FETCH_FAILED: ${compensationError.message}`);
+  }
+  if (profileError) {
+    throw new Error(`PAYROLL_READINESS_PROFILE_FETCH_FAILED: ${profileError.message}`);
+  }
+
+  const compensationByEmployeeId = new Map<string, CompensationRow>();
+  for (const row of (compensationData ?? []) as CompensationRow[]) {
+    compensationByEmployeeId.set(row.employee_id, row);
+  }
+
+  const profileByEmployeeId = new Map<string, EmployeeProfileRow>();
+  for (const row of (profileData ?? []) as EmployeeProfileRow[]) {
+    profileByEmployeeId.set(row.employee_id, row);
+  }
+
+  return employees.map((employee) => {
+    const compensation = compensationByEmployeeId.get(employee.id);
+    const profile = profileByEmployeeId.get(employee.id);
+    const details = profile?.personal_details ?? null;
+
+    const baseSalary = compensation?.base_salary ?? null;
+    const currency = compensation?.currency?.trim() ?? null;
+    const payFrequency = readStringField(details, ["pay_frequency", "payFrequency"]);
+    const bankName = readStringField(details, ["bank_name", "bankName"]);
+    const bankAccount = readStringField(details, ["bank_account", "bankAccount"]);
+    const bankCode = readStringField(details, ["bank_code", "bankCode"]);
+
+    const readinessIssues = buildReadinessIssues({
+      employee,
+      baseSalary,
+      currency,
+      payFrequency,
+      bankName,
+      bankAccount,
+      bankCode,
+    });
+
+    return {
+      ...employee,
+      base_salary: baseSalary,
+      currency,
+      pay_frequency: payFrequency,
+      bank_name: bankName,
+      bank_account: bankAccount,
+      bank_code: bankCode,
+      readiness_issues: readinessIssues,
+      ready_for_finance_export: readinessIssues.length === 0,
+    };
+  });
 }
 
 const CreateEmployeeSchema = z.object({

@@ -1,10 +1,44 @@
+
 # TeamFrame
 
-> **A lightweight HR structure system for startups with 6–25 employees.**
+> **Build Stability Note (Release Hardening Mode)**
 >
-> Core promise: **we install a working HR structure system in 48–72 hours.**
+> To guarantee deterministic, artifact-race-free builds:
+> - The `.next` directory is always cleaned before every build (local, CI, production).
+> - Never run more than one `npm run build` or `next build` in the same workspace at the same time.
+> - If you see any ENOENT or missing artifact errors, ensure `.next` is clean and no concurrent builds are running.
+> - This is required due to Next.js artifact race conditions in monorepo and CI environments.
+
+> **A payroll-ready employee data layer for startup finance teams.**
+>
+> Core promise: **we install a working payroll input layer in 48–72 hours.**
 
 This README is **the enforcement contract for TeamFrame V1**. If a feature, dependency, or decision conflicts with this document, the README wins until the README is changed.
+
+## Launch Lock Mode (Permanent)
+
+Current status:
+- product-coherent
+- architecturally stable
+- launch-safe
+
+The product identity is locked and must remain unchanged:
+- payroll input + export layer for startup finance teams
+- finance-ready employee dataset system
+- export-first operations layer
+- payroll preparation workflow
+- structured employee record source for finance
+
+TeamFrame is not:
+- payroll software
+- payroll execution infrastructure
+- HRIS
+- people operations suite
+- compliance engine
+- tax engine
+- workforce management platform
+
+In launch lock mode, only documentation and copy consistency reinforcement are allowed. Do not expand runtime scope, change architecture, or add new behavior.
 
 ---
 
@@ -12,10 +46,13 @@ This README is **the enforcement contract for TeamFrame V1**. If a feature, depe
 
 The product provides exactly these things:
 
-- **Employee directory** — who's on the team
-- **Org visibility** — a simple org chart
-- **Onboarding document hub** — upload, download, grouped export
-- **Minimal leave tracking** — request, approve, reject
+- **Employee data source of truth** — the canonical employee record used to prepare payroll inputs
+- **Finance-first payroll input workflow** — structured, validated, exportable employee data for finance
+- **Payroll snapshot discipline** — a time-based dataset freeze for a payroll run or review window
+- **Export-first operations** — payroll-ready CSV/Excel output for finance consumption
+- **Org visibility** — a simple org chart to keep designation, department, and reporting context aligned
+- **Onboarding document hub** — upload, download, grouped export for supporting employee records
+- **Minimal leave tracking** — request, approve, reject so status changes are visible before export
 - **Company updates** — a simple announcement feed
 - **Two constrained AI helpers** (see *AI Limitations*):
   - `generateBio(cvText)` — CV text → 3–5 sentence bio
@@ -25,15 +62,76 @@ Nothing more.
 
 ---
 
+## Core system definition
+
+- **Employee data is the source of truth.** TeamFrame exists to keep payroll input data structured, current, and reviewable.
+- **Payroll snapshot** means a time-based freeze of the employee dataset used for a payroll cycle, finance review, or export handoff.
+- **Export-first workflow** means the primary output is finance-ready CSV/Excel data, not an HR workflow surface.
+- **Finance is the primary export user.** Admins maintain records; finance consumes validated exports.
+
+### Required payroll fields
+
+Every payroll-ready employee record must account for these fields:
+
+- name
+- designation
+- department
+- salary
+- currency
+- pay frequency
+- bank account
+- bank name
+- bank code
+- employment status
+
+### Key workflows
+
+- add or update employee data
+- validate completeness before payroll snapshot or export
+- generate a payroll-ready export for finance
+- flag missing or inconsistent data before handoff
+
+### UX philosophy
+
+- finance-ready, not HR-heavy
+- export-first system of truth
+
+### UX and language lock
+
+Keep UX tone:
+- startup-native
+- calm
+- operational
+- finance-ops oriented
+- lightweight modern SaaS
+
+Avoid:
+- enterprise HR terminology
+- generic team management phrasing
+- process-heavy corporate language
+- dashboard/analytics-first narrative
+
+Prefer vocabulary:
+- payroll input
+- payroll-ready record
+- finance export
+- export readiness
+- batch handoff
+
+---
+
 ## What TeamFrame is NOT (explicit non-goals)
 
 TeamFrame is **not** any of the following. Do not add them.
 
-- payroll
+- payroll execution
+- tax computation
+- payment processing
+- compliance engine or advisory workflow
 - benefits
-- accounting / tax / compliance engines
-- analytics dashboards / HR metrics / engagement scoring
-- AI HR advisor / chatbot / copilot
+- accounting system of record
+- analytics dashboards / people-ops metrics / engagement scoring
+- AI HR, payroll, or finance advisor / chatbot / copilot
 - employee scoring, ranking, personality inference
 - hiring pipelines / ATS
 - onboarding **workflows** (tasks, reminders, checklists, automation states)
@@ -45,7 +143,7 @@ TeamFrame is **not** any of the following. Do not add them.
 - plugin / extension systems
 - enterprise admin systems, custom RBAC beyond `admin` / `employee`
 
-If a feature resembles **enterprise HRIS**, **workflow automation**, or **AI assistant platform** behavior — it is **V2** and must be rejected.
+If a feature resembles **payroll execution software**, **enterprise HRIS**, **workflow automation**, or **AI assistant platform** behavior — it is **V2** and must be rejected.
 
 ---
 
@@ -232,9 +330,9 @@ Detailed branch protection setup: [`.github/branch-protection.md`](.github/branc
 
 ## Coding principles
 
-- **Simplicity is a product feature.** Optimize for fast onboarding, not extensibility.
+- **Simplicity is a product feature.** Optimize for fast finance readiness, not extensibility.
 - **Explicit over abstract.** Prefer hand-written guards to clever frameworks.
-- **One feature, one justification.** Every new feature must defend itself against the 72-hour setup promise.
+- **One feature, one justification.** Every new feature must defend itself against the 72-hour payroll-input setup promise.
 - **No premature scalability.** Build for 10 customers. The 11th customer is a happy problem.
 - **Reuse existing entities.** New tables are an escalation, not a default.
 
@@ -242,7 +340,7 @@ Sanity check before any feature (also in [`docs/drift-guard.md`](docs/drift-guar
 
 1. Does this move setup closer to or further from 72-hour readiness?
 2. Does this reuse existing entities/tables?
-3. Does this introduce workflow automation, HR-ops logic, analytics, or AI scope creep?
+3. Does this introduce payroll execution, workflow automation, tax/compliance logic, analytics, or AI scope creep?
 4. Can it ship without a new subsystem?
 
 If any answer trends toward complexity, the feature is **V2**.
@@ -255,12 +353,12 @@ If any answer trends toward complexity, the feature is **V2**.
 - **Server-side RBAC is mandatory.** Client checks are UX hints only.
 - **Two roles only**: `admin`, `employee`. See [`docs/rbac-rules.md`](docs/rbac-rules.md).
 - **Service-role key is server-only.** Importing `/lib/db/supabaseServer` from a client component is a review block.
-- **Compensation is admin-only.** It must never appear in org-chart or employee-scope queries.
-- **Audit on every sensitive admin action**: employee delete, compensation change, document delete, leave decision, bulk export.
+- **Compensation and banking data are finance-sensitive.** They must remain admin-controlled and never leak into employee-scope surfaces.
+- **Audit on every sensitive admin action**: employee delete, compensation change, document delete, leave decision, payroll export.
 - **HTTPS only.** Storage encrypted at rest via Supabase defaults.
 - **Manual employee delete** is supported (soft-delete via `deleted_at`).
 
-Deferred to V2 (intentionally): compliance dashboards, consent management UI, audit-log dashboards, automated data-export UI.
+Deferred to V2 (intentionally): payroll execution, tax automation, payment rails, compliance dashboards, consent management UI, audit-log dashboards, automated data-export UI.
 
 ---
 
@@ -277,8 +375,8 @@ AI must **never**:
 - query the database directly
 - receive an unscoped employee record
 - access compensation implicitly
-- act as an HR advisor or chatbot
-- generate HR, legal, or compliance advice
+- act as an HR, payroll, or finance advisor or chatbot
+- generate payroll, legal, tax, or compliance advice
 - score, rank, or compare employees
 - infer personality, sentiment, or performance
 - generate analytics or insights
@@ -330,7 +428,7 @@ TeamFrame V1 is intentionally constrained. The goal is:
 
 - fast launch
 - real customer usage
-- operational simplicity
+- finance-ready operational simplicity
 - founder-managed support
 - low-maintenance infrastructure
 

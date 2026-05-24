@@ -3,7 +3,25 @@
 ## Purpose
 Define the minimum architecture contract for TeamFrame V1 and prevent platform drift.
 
-TeamFrame is a **lightweight HR structure system** for startups with **6–25 employees**. The core promise is: *we install a working HR structure system in 48–72 hours*. Every architectural decision must serve that promise. Anything that does not is V2.
+TeamFrame is a **payroll-ready employee data layer** for startup finance teams supporting companies with **6–25 employees**. The core promise is: *we install a working payroll input layer in 48–72 hours*. Every architectural decision must serve that promise. Anything that does not is V2.
+
+## Core System Contract
+- Employee data is the source of truth for payroll inputs.
+- Payroll snapshots represent a time-based freeze of the employee dataset for a payroll cycle or finance review window.
+- The primary workflow is export-first: maintain structured data, validate it, and hand finance a payroll-ready CSV/Excel dataset.
+- TeamFrame prepares payroll inputs only. It does not execute payroll, compute taxes, move money, or act as a compliance engine.
+
+## Required Payroll Fields
+- name
+- designation
+- department
+- salary
+- currency
+- pay frequency
+- bank account
+- bank name
+- bank code
+- employment status
 
 ## Tech Stack
 - **Frontend**: Next.js App Router, TypeScript, TailwindCSS
@@ -37,11 +55,13 @@ No layer may be skipped. No client may bypass the middleware. No service-role ke
 - Server-side RBAC is **mandatory** for every protected operation.
 - Frontend role checks are **UX-only** and never grant access.
 - The Supabase **service role key** is server-only and must never appear in any code path reachable from the browser.
-- Compensation data is admin-only and must never be selected in code paths that feed the org chart, employee directory, or AI prompts.
+- Compensation and banking data are admin-only and must never be selected in code paths that feed the org chart, employee directory, or AI prompts.
 - HTTPS only. Storage encrypted at rest via Supabase defaults.
 
 ## V1 Domain Boundaries
-- employee directory
+- employee data source of truth
+- payroll snapshot discipline
+- export-first finance handoff
 - org visibility
 - onboarding document hub
 - minimal leave tracking

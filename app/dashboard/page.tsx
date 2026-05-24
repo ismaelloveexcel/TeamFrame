@@ -1,35 +1,100 @@
-export default function DashboardPage() {
+import Link from "next/link";
+import { requireTenantActor } from "@/middleware/rbac";
+import { listOrgChart, listPayrollReadinessForAdmin } from "@/services/employeeService";
+import { listPendingLeaves } from "@/services/leaveService";
+
+export const dynamic = "force-dynamic";
+
+export default async function DashboardPage() {
+  const actor = await requireTenantActor();
+  const employees = await listOrgChart(actor);
+  const activeEmployees = employees.filter((employee) => employee.status === "active").length;
+  const needsAttention = employees.filter((employee) => employee.status !== "active").length;
+
+  const pendingApprovals =
+    actor.role === "admin" ? (await listPendingLeaves(actor)).length : null;
+  const readinessRows = actor.role === "admin" ? await listPayrollReadinessForAdmin(actor) : [];
+  const blockedForExport = readinessRows.filter((row) => !row.ready_for_finance_export).length;
+
   return (
     <main className="mx-auto max-w-5xl px-6 py-14">
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-ink-300/60 pb-5">
         <div className="space-y-2">
-          <p className="text-[12px] tracking-[0.14em] text-ink-500">Executive summary</p>
-          <h1 className="text-[34px] leading-tight tracking-tight">Operational snapshot</h1>
+          <p className="text-[12px] tracking-[0.14em] text-ink-500">Payroll operations</p>
+          <h1 className="text-[34px] leading-tight tracking-tight">Snapshot workspace</h1>
         </div>
-        <p className="text-[12px] text-ink-500">Published 22 May 2026 · 14:02 UTC</p>
+        <p className="text-[12px] text-ink-500">Finance-ready employee data · role-gated</p>
       </div>
 
       <p className="mt-7 max-w-xl text-[15px] text-ink-700">
-        Stable operating posture with strict runtime controls active across employee, leave, and document workflows.
+        Review payroll inputs, record status changes, and export posture from one calm operational view.
       </p>
 
       <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
-          <p className="text-[12px] text-ink-500">Employee records</p>
-          <p className="mt-2 text-[24px] tracking-tight">Current</p>
+        <article className="tf-kpi">
+          <p className="text-[12px] text-ink-500">Ready to run</p>
+          <p className="mt-2 text-[24px] tracking-tight">{activeEmployees}</p>
         </article>
-        <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
-          <p className="text-[12px] text-ink-500">Leave queue</p>
-          <p className="mt-2 text-[24px] tracking-tight">In control</p>
+        <article className="tf-kpi">
+          <p className="text-[12px] text-ink-500">Needs attention</p>
+          <p className="mt-2 text-[24px] tracking-tight">{needsAttention}</p>
         </article>
-        <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
-          <p className="text-[12px] text-ink-500">Document workflows</p>
-          <p className="mt-2 text-[24px] tracking-tight">Audited</p>
+        <article className="tf-kpi">
+          <p className="text-[12px] text-ink-500">Payroll batch changes</p>
+          <p className="mt-2 text-[24px] tracking-tight">
+            {pendingApprovals === null ? "Admin only" : pendingApprovals}
+          </p>
         </article>
-        <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
-          <p className="text-[12px] text-ink-500">Release posture</p>
-          <p className="mt-2 text-[24px] tracking-tight">Green</p>
+        <article className="tf-kpi">
+          <p className="text-[12px] text-ink-500">Finance export</p>
+          <p className="mt-2 text-[24px] tracking-tight">
+            {actor.role === "admin"
+              ? blockedForExport === 0
+                ? "Ready"
+                : `Blocked (${blockedForExport})`
+              : "CSV / Sheets"}
+          </p>
         </article>
+        <article className="tf-kpi">
+          <p className="text-[12px] text-ink-500">Data records</p>
+          <p className="mt-2 text-[24px] tracking-tight">{employees.length}</p>
+        </article>
+      </section>
+
+      <section className="tf-panel mt-8 px-5 py-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-[18px] tracking-tight">Batch notes</h2>
+            <p className="mt-1 text-[13px] text-ink-500">
+              Use this view to prepare the next payroll snapshot before export.
+            </p>
+          </div>
+          <Link href="/employees" className="tf-button-primary">
+            Review payroll inputs
+          </Link>
+        </div>
+        <ul className="mt-3 space-y-2 text-[14px] text-ink-700">
+          <li className="flex items-start justify-between gap-3 border-b border-ink-100 pb-2">
+            <span>Employee dataset is available for snapshot review.</span>
+            <span className="text-[12px] text-ink-500">Current export batch</span>
+          </li>
+          <li className="flex items-start justify-between gap-3 border-b border-ink-100 pb-2">
+            <span>Status changes that can affect payroll batches remain visible.</span>
+            <span className="text-[12px] text-ink-500">Ready for finance review</span>
+          </li>
+          <li className="flex items-start justify-between gap-3">
+            <span>Finance export preparation stays role-gated and audit tracked.</span>
+            <span className="text-[12px] text-ink-500">Export prepared</span>
+          </li>
+        </ul>
+
+        {actor.role === "admin" ? (
+          <div className="mt-4">
+            <Link href="/admin" className="text-[13px] text-ink-700 underline decoration-ink-300 underline-offset-4 transition hover:decoration-ink-900">
+              Open finance controls
+            </Link>
+          </div>
+        ) : null}
       </section>
 
       <form action="/auth/logout" method="post" className="mt-10">

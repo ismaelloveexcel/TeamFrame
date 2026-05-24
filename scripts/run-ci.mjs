@@ -28,18 +28,34 @@ const actorContextByGate = {
 };
 
 const ctx = getDeterministicContext("ci-full");
+const gateTrace = [];
 console.log(`SEED=${ctx.seed}`);
 console.log(`TEST_RUN_ID=${ctx.testRunId}`);
 console.log(`TEST_TENANT_SEED=${ctx.tenantSeed}`);
+console.log(`RUN_MODE=${ctx.runMode}`);
 
 const isWindows = process.platform === "win32";
+
+async function safeDbSnapshot() {
+  try {
+    return await getDbSnapshot(process.env.SUPABASE_DB_URL);
+  } catch (err) {
+    return {
+      capturedAt: new Date().toISOString(),
+      tables: {},
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
 
 for (let i = 0; i < gates.length; i += 1) {
   const gate = gates[i];
   const label = `Gate ${i + 1}/${gates.length}`;
   console.log(`\n=== ${label}: npm run ${gate} ===`);
 
-  const beforeSnapshot = await getDbSnapshot(process.env.SUPABASE_DB_URL);
+  const beforeSnapshot = await safeDbSnapshot();
+  const gateRunId = `${ctx.testRunId}-${gate.replace(/[^a-z0-9]/gi, "-")}`;
+  const gateTenantSeed = `${ctx.tenantSeed}-${gate.replace(/[^a-z0-9]/gi, "-")}`;
 
   const command = isWindows ? "cmd.exe" : "npm";
   const args = isWindows ? ["/d", "/s", "/c", `npm run ${gate}`] : ["run", gate];
@@ -48,20 +64,28 @@ for (let i = 0; i < gates.length; i += 1) {
     stdio: "inherit",
     env: {
       ...process.env,
+      CI_SEED: ctx.seed,
+      CI_RUN_ID: gateRunId,
+      CI_MODE: "deterministic",
       SEED: ctx.seed,
-      TEST_RUN_ID: ctx.testRunId,
-      TEST_TENANT_SEED: ctx.tenantSeed,
+      TEST_RUN_ID: gateRunId,
+      TEST_TENANT_SEED: gateTenantSeed,
+      RUN_MODE: "deterministic",
     },
   });
 
+  gateTrace.push({ gate, exitCode: result.status ?? 0 });
+
   if (result.status !== 0) {
     const code = result.status ?? 1;
-    const afterSnapshot = await getDbSnapshot(process.env.SUPABASE_DB_URL);
+    const afterSnapshot = await safeDbSnapshot();
     const replayPath = writeReplayArtifact({
       testId: `gate-${gate}`,
       gate,
       command,
       args,
+      executionTrace: gateTrace,
+      testOrder: gates,
       actorContext: actorContextByGate[gate] || { actor: "unknown", tenant: "unknown" },
       dbSnapshotDiff: snapshotDiff(beforeSnapshot, afterSnapshot),
       exitCode: code,
