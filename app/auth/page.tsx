@@ -20,16 +20,16 @@ export default async function AuthPage({
         <p className="text-[12px] uppercase tracking-[0.18em] text-ink-500">
           TeamFrame
         </p>
-        <h1 className="text-[32px] leading-tight tracking-tight">Sign in.</h1>
+        <h1 className="text-[32px] leading-tight tracking-tight">Sign in to your payroll data workspace.</h1>
         <p className="text-[15px] text-ink-700">
-          Enter your work email. We&apos;ll send you a one-time link.
+          Use your work email to access payroll inputs, snapshot review, and finance export preparation.
         </p>
       </div>
 
       <AuthForm errorMessage={errorMessage} />
 
       <p className="mt-10 text-[12px] text-ink-500">
-        No passwords. No social logins. Admin-invited only.
+        Password-free access. If you are not recognized, ask your admin to add your work email to the data record first.
       </p>
     </main>
   );

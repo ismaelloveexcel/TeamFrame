@@ -14,10 +14,10 @@ export default async function CheckEmailPage({
         <p className="text-[12px] uppercase tracking-[0.18em] text-ink-500">
           Link sent
         </p>
-        <h1 className="text-[32px] leading-tight tracking-tight">Check your email.</h1>
+        <h1 className="text-[32px] leading-tight tracking-tight">Check your inbox.</h1>
         <p className="max-w-prose text-[15px] leading-relaxed text-ink-700">
-          We sent a sign-in link to <span className="font-medium">{recipient}</span>. Open it on
-          this device to finish signing in.
+          A secure sign-in link was sent to <span className="font-medium">{recipient}</span>. Open
+          the newest email on this device to continue into your payroll data workspace.
         </p>
       </div>
 
@@ -29,7 +29,10 @@ export default async function CheckEmailPage({
       </Link>
 
       <p className="mt-12 text-[12px] text-ink-500">
-        Didn&apos;t receive it? Check spam, or ask your admin to confirm you&apos;re on the team.
+        If it doesn&apos;t arrive within a minute, check spam first, then confirm your data record is active with your admin.
+      </p>
+      <p className="mt-3 text-[12px] text-ink-500">
+        Security note: each new sign-in request invalidates older email links.
       </p>
     </main>
   );

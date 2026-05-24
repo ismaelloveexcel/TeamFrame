@@ -19,10 +19,11 @@ jobs:
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       SITE_URL: ${{ secrets.SITE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_CI }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       RELEASE_TAG: ${{ github.ref_name }}
-      SEED: teamframe-release-v2
+      CI_SEED: teamframe-release-v2
+      CI_MODE: deterministic
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,7 +33,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Validate tag format
@@ -67,47 +68,40 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Capture schema state hash
+        run: node scripts/schema-state.mjs
+
+      - name: Upload schema state artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-schema-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ci/schema-state/schema-state.json
+          if-no-files-found: error
+
+      - name: Reliability helper self-test
+        run: node scripts/verify-reliability-selftest.mjs
+
       - name: Initialize deterministic seed context
         shell: bash
         run: |
           set -euo pipefail
-          echo "SEED=${SEED}" >> "$GITHUB_ENV"
+          echo "CI_SEED=${CI_SEED}" >> "$GITHUB_ENV"
+          echo "CI_MODE=${CI_MODE}" >> "$GITHUB_ENV"
+          echo "CI_RUN_ID=release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
+          echo "SEED=${CI_SEED}" >> "$GITHUB_ENV"
+          echo "RUN_MODE=${CI_MODE}" >> "$GITHUB_ENV"
           echo "TEST_RUN_ID=release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
-          echo "TEST_TENANT_SEED=${SEED}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
+          echo "TEST_TENANT_SEED=${CI_SEED}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
 
-      - name: Gate 1 - db:apply
-        run: npm run db:apply
-
-      - name: Gate 2 - db:test:rls
-        run: npm run db:test:rls
-
-      - name: Gate 3 - db:test:stale
-        run: npm run db:test:stale
-
-      - name: Gate 4 - test:employees
-        run: npm run test:employees
-
-      - name: Gate 5 - test:security
-        run: npm run test:security
-
-      - name: Gate 6 - test:reliability
-        run: npm run test:reliability
-
-      - name: Gate 7 - typecheck
-        run: npm run typecheck
-
-      - name: Gate 8 - lint
-        run: npm run lint
-
-      - name: Gate 9 - build
-        run: npm run build
+      - name: Gate Chain - run ci:full
+        run: npm run ci:full
 
       - name: Upload replay artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: release-replay-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/replay/*.json
+          path: .ci/replays/**
           if-no-files-found: ignore
 
       - name: Release validation summary
@@ -119,7 +113,8 @@ jobs:
             echo "- Commit: ${GITHUB_SHA}"
             echo "- Result: PASS"
             echo "- Gate chain: strict sequential execution enforced"
-            echo "- Seed: ${SEED}"
-            echo "- Test Run ID: ${TEST_RUN_ID}"
+            echo "- Mode: ${CI_MODE}"
+            echo "- Seed: ${CI_SEED}"
+            echo "- Test Run ID: ${CI_RUN_ID}"
             echo "- Test Tenant Seed: ${TEST_TENANT_SEED}"
           } >> "$GITHUB_STEP_SUMMARY"

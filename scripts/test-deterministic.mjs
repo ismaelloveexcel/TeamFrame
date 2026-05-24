@@ -11,6 +11,7 @@ const isWindows = process.platform === "win32";
 console.log(`SEED=${ctx.seed}`);
 console.log(`TEST_RUN_ID=${ctx.testRunId}`);
 console.log(`TEST_TENANT_SEED=${ctx.tenantSeed}`);
+console.log(`RUN_MODE=${ctx.runMode}`);
 
 for (const check of checks) {
   console.log(`\n=== deterministic check: ${check} ===`);
@@ -20,9 +21,13 @@ for (const check of checks) {
     stdio: "inherit",
     env: {
       ...process.env,
+      CI_SEED: ctx.seed,
+      CI_RUN_ID: ctx.testRunId,
+      CI_MODE: "deterministic",
       SEED: ctx.seed,
       TEST_RUN_ID: ctx.testRunId,
       TEST_TENANT_SEED: ctx.tenantSeed,
+      RUN_MODE: "deterministic",
     },
   });
 
