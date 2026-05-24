@@ -11,7 +11,6 @@ export const SCHEMA_ORDER = [
   "leaves.sql",
   "company_updates.sql",
   "audit_logs.sql",
-  "validation_tracking.sql",
   "policies.sql",
   "procedures.sql",
   "acknowledgements.sql",
