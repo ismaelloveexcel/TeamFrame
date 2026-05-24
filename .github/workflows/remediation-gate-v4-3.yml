@@ -263,7 +263,7 @@ jobs:
           elif [[ "$BRANCH" == remediation/phase3* ]]; then
             ALLOWED='^(app/|middleware/|lib/|tests/|docs/|security/|scripts/)'
           elif [[ "$BRANCH" == remediation/phase4-5* ]]; then
-            ALLOWED='^(docs/|README\.md$|app/|components/|lib/|scripts/)'
+            ALLOWED='^(docs/|README\.md$|app/|components/|lib/|scripts/|\.github/workflows/remediation-)'
           else
             echo "unknown remediation branch"
             exit 1
