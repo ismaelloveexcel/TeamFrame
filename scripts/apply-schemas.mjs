@@ -16,27 +16,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import dotenv from "dotenv";
+import { SCHEMA_ORDER } from "./schema-order.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..");
 
 dotenv.config({ path: join(repoRoot, ".env.local") });
-
-const SCHEMA_ORDER = [
-  "companies.sql",
-  "employees.sql",
-  "employee_profiles.sql",
-  "compensation.sql",
-  "documents.sql",
-  "leaves.sql",
-  "company_updates.sql",
-  "audit_logs.sql",
-  "validation_tracking.sql",
-  "policies.sql",
-  "procedures.sql",
-  "acknowledgements.sql",
-  "tenancy_rls.sql",
-];
 
 const connectionString = process.env.SUPABASE_DB_URL;
 if (!connectionString || connectionString.includes("[YOUR-PASSWORD]")) {

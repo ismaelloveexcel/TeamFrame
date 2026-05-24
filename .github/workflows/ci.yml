@@ -64,6 +64,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Capture schema state hash
+        run: node scripts/schema-state.mjs
+
+      - name: Upload schema state artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ci/schema-state/schema-state.json
+          if-no-files-found: error
+
+      - name: Upload phase-0 reproduction artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase-0-repro-${{ github.run_id }}-${{ github.run_attempt }}
+          path: remediation/phase-0/outputs/**
+          if-no-files-found: ignore
+
+      - name: Reliability helper self-test
+        run: node scripts/verify-reliability-selftest.mjs
+
       - name: Initialize deterministic seed context
         shell: bash
         run: |
