@@ -1,7 +1,5 @@
 /**
  * Single source of truth for TeamFrame schema apply order.
- *
- * Keep every migration script wired to this list to avoid drift.
  */
 
 export const SCHEMA_ORDER = [
