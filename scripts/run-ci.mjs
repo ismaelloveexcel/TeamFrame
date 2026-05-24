@@ -82,6 +82,8 @@ for (let i = 0; i < gates.length; i += 1) {
     const replayPath = writeReplayArtifact({
       testId: `gate-${gate}`,
       gate,
+      gateRunId,
+      gateTenantSeed,
       command,
       args,
       executionTrace: gateTrace,
