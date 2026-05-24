@@ -34,16 +34,20 @@ async function asActor(client, claims) {
 }
 
 async function expectDenied(client, claims, fn, message) {
+  let denied = false;
   await client.query("savepoint denied_case");
   try {
     await asActor(client, claims);
     await fn();
-    await client.query("rollback to savepoint denied_case");
-    await client.query("release savepoint denied_case");
-    throw new Error(message);
   } catch {
+    denied = true;
+  } finally {
     await client.query("rollback to savepoint denied_case");
     await client.query("release savepoint denied_case");
+  }
+
+  if (!denied) {
+    throw new Error(message);
   }
 }
 

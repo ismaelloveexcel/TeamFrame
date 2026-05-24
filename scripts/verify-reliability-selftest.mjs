@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Guardrail self-test: verifies the expectDenied logic shape cannot silently pass.
+ * Guardrail self-test: verifies the same deny-path shape used by the v2 reliability helpers.
  * This test is DB-free and validates helper semantics directly.
  */
 

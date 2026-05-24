@@ -34,14 +34,21 @@ async function asActor(client, claims) {
 }
 
 async function expectDenied(client, claims, sql, params, message) {
+  let denied = false;
   await client.query("begin");
   try {
     await asActor(client, claims);
     await client.query(sql, params);
-    await client.query("rollback");
-    throw new Error(message);
   } catch {
+    denied = true;
+  } finally {
     await client.query("rollback");
+    await client.query("reset role");
+    await client.query("select set_config('request.jwt.claims', '', true)");
+  }
+
+  if (!denied) {
+    throw new Error(message);
   }
 }
 
