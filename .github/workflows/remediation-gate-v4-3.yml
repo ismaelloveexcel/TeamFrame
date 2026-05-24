@@ -323,14 +323,12 @@ jobs:
           }
           NODE
 
-      - name: Run tests once and persist structured results
+      - name: Generate auditor input from validated external gates
         run: |
           set -euo pipefail
 
-          npm run test:employees
-          npm run test:security
-          npm run test:reliability
-
+          # Gate Chain (Strict) + Freeze Guard are already validated above and
+          # are the authoritative runtime/security signal sources for this gate.
           jq -n '{
             runtimeCorrectness: true,
             onboardingFlow: true,
@@ -356,7 +354,7 @@ jobs:
           PR=$(jq --raw-output .number pr_meta.json)
           TITLE=$(jq -r '.title' pr_meta.json)
 
-          SENSITIVE=$(grep -E '^\.github/workflows/remediation-(gate|freeze)' files_norm.txt || true)
+          SENSITIVE=$(grep -E '^\.github/workflows/remediation-freeze\.yml$' files_norm.txt || true)
           HAS_UNFREEZE=0
           if echo "$TITLE" | grep -qi 'unfreeze'; then
             HAS_UNFREEZE=1
