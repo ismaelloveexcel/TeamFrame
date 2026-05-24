@@ -37,6 +37,9 @@ function getErrorCode(error: unknown): string {
 }
 
 export async function createEmployeeAction(formData: FormData): Promise<void> {
+  let failed = false;
+  let errorCode = "UNKNOWN";
+
   try {
     const actor = await requireTenantActor();
     const parsed = CreateInputSchema.parse({
@@ -48,13 +51,22 @@ export async function createEmployeeAction(formData: FormData): Promise<void> {
     });
 
     await createEmployee(actor, parsed);
-    redirect("/employees?status=created");
   } catch (error) {
-    redirect(`/employees?error=${encodeURIComponent(getErrorCode(error))}`);
+    failed = true;
+    errorCode = getErrorCode(error);
   }
+
+  if (failed) {
+    redirect(`/employees?error=${encodeURIComponent(errorCode)}`);
+  }
+
+  redirect("/employees?status=created");
 }
 
 export async function updateEmployeeAction(formData: FormData): Promise<void> {
+  let failed = false;
+  let errorCode = "UNKNOWN";
+
   try {
     const actor = await requireTenantActor();
     const parsed = UpdateInputSchema.parse({
@@ -75,14 +87,22 @@ export async function updateEmployeeAction(formData: FormData): Promise<void> {
       },
       parsed.expected_updated_at,
     );
-
-    redirect("/employees?status=updated");
   } catch (error) {
-    redirect(`/employees?error=${encodeURIComponent(getErrorCode(error))}`);
+    failed = true;
+    errorCode = getErrorCode(error);
   }
+
+  if (failed) {
+    redirect(`/employees?error=${encodeURIComponent(errorCode)}`);
+  }
+
+  redirect("/employees?status=updated");
 }
 
 export async function archiveEmployeeAction(formData: FormData): Promise<void> {
+  let failed = false;
+  let errorCode = "UNKNOWN";
+
   try {
     const actor = await requireTenantActor();
     const parsed = ArchiveInputSchema.parse({
@@ -91,9 +111,14 @@ export async function archiveEmployeeAction(formData: FormData): Promise<void> {
     });
 
     await softDeleteEmployee(actor, parsed.employee_id, parsed.expected_updated_at);
-
-    redirect("/employees?status=archived");
   } catch (error) {
-    redirect(`/employees?error=${encodeURIComponent(getErrorCode(error))}`);
+    failed = true;
+    errorCode = getErrorCode(error);
   }
+
+  if (failed) {
+    redirect(`/employees?error=${encodeURIComponent(errorCode)}`);
+  }
+
+  redirect("/employees?status=archived");
 }
