@@ -38,7 +38,8 @@ async function expectDenied(client, claims, sql, params, message) {
   await client.query("begin");
   try {
     await asActor(client, claims);
-    await client.query(sql, params);
+    const result = await client.query(sql, params);
+    denied = result.rowCount === 0;
   } catch {
     denied = true;
   } finally {

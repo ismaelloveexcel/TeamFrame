@@ -12,7 +12,8 @@ function assert(condition, message) {
 async function correctedExpectDenied(runDeniedPath, message) {
   let denied = false;
   try {
-    await runDeniedPath();
+    const result = await runDeniedPath();
+    denied = !result || result.rowCount === 0;
   } catch {
     denied = true;
   }
@@ -25,10 +26,13 @@ async function main() {
     throw new Error("denied");
   }, "expected denied path to throw");
 
-  // Path 2: operation succeeds -> should fail the assertion
+  // Path 2: operation succeeds but affects zero rows -> should also pass
+  await correctedExpectDenied(async () => ({ rowCount: 0 }), "expected denied path to affect zero rows");
+
+  // Path 3: operation succeeds and affects rows -> should fail the assertion
   let failedAsExpected = false;
   try {
-    await correctedExpectDenied(async () => {}, "operation should have been denied");
+    await correctedExpectDenied(async () => ({ rowCount: 1 }), "operation should have been denied");
   } catch {
     failedAsExpected = true;
   }

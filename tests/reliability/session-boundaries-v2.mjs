@@ -38,7 +38,8 @@ async function expectDenied(client, claims, fn, message) {
   await client.query("savepoint denied_case");
   try {
     await asActor(client, claims);
-    await fn();
+    const result = await fn();
+    denied = !result || result.rowCount === 0;
   } catch {
     denied = true;
   } finally {
@@ -122,7 +123,7 @@ async function main() {
       client,
       employeeClaims,
       async () => {
-        await client.query(
+        return client.query(
           `insert into audit_logs (tenant_id, actor_user_id, action_type, target_id)
            values ($1, $2, 'session.boundary.denied', $3)`,
           [tenantA, employeeAuthId, employeeRowId],
@@ -142,7 +143,7 @@ async function main() {
       client,
       adminClaims,
       async () => {
-        await client.query(
+        return client.query(
           `insert into employees (tenant_id, full_name, email, role_title, department, timezone, status, setup_status)
            values ($1, 'Replay Spoof', $2, 'Ops', 'Operations', 'UTC', 'active', 'ready')`,
           [tenantB, ctx.deterministicEmail("replay", "reliability.test")],
