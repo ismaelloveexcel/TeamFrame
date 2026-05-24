@@ -34,38 +34,34 @@ if (!connectionString) {
   process.exit(1);
 }
 
-const ALLOW_DESTRUCTIVE_RESET = process.env.ALLOW_DESTRUCTIVE_RESET;
-if (ALLOW_DESTRUCTIVE_RESET !== "yes-i-mean-it") {
-  console.error(
-    "✗ Refusing destructive reset. Set ALLOW_DESTRUCTIVE_RESET=yes-i-mean-it to continue.",
-  );
+const allowDestructiveReset = process.env.ALLOW_DESTRUCTIVE_RESET === "true";
+if (!allowDestructiveReset) {
+  console.error("✗ Refusing destructive reset. Set ALLOW_DESTRUCTIVE_RESET=true to continue.");
   process.exit(1);
 }
 
-const isCi = String(process.env.CI ?? "").toLowerCase() === "true";
-if (isCi && process.env.ALLOW_DESTRUCTIVE_RESET_IN_CI !== "yes-i-mean-it") {
-  console.error(
-    "✗ Refusing destructive reset in CI. Set ALLOW_DESTRUCTIVE_RESET_IN_CI=yes-i-mean-it to continue.",
-  );
+const inCi = process.env.CI === "true" || process.env.GITHUB_ACTIONS === "true";
+const allowInCi = process.env.ALLOW_DESTRUCTIVE_RESET_IN_CI === "true";
+if (inCi && !allowInCi) {
+  console.error("✗ Refusing destructive reset in CI. Set ALLOW_DESTRUCTIVE_RESET_IN_CI=true to allow.");
   process.exit(1);
 }
 
-function extractHost(dbUrl) {
-  const normalized = dbUrl.replace(/^"|"$/g, "");
-  const parsed = new URL(normalized);
-  return parsed.hostname.toLowerCase();
-}
-
-const dbHost = extractHost(connectionString);
-const protectedHostTokens = (process.env.PROTECTED_DB_HOST_TOKENS ?? "")
+const protectedHostTokens = (process.env.PROTECTED_DB_HOST_TOKENS || "prod,production,live")
   .split(",")
   .map((token) => token.trim().toLowerCase())
   .filter(Boolean);
 
-if (protectedHostTokens.some((token) => dbHost.includes(token))) {
-  console.error(
-    `✗ Refusing destructive reset for protected host '${dbHost}'. Review PROTECTED_DB_HOST_TOKENS.`,
-  );
+const dbHost = (() => {
+  try {
+    return new URL(connectionString).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+})();
+
+if (dbHost && protectedHostTokens.some((token) => dbHost.includes(token))) {
+  console.error(`✗ Refusing destructive reset against protected host: ${dbHost}`);
   process.exit(1);
 }
 

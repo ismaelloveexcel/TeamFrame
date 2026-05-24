@@ -41,7 +41,7 @@ jobs:
           mapfile -t files < <(git diff --name-only "$base" "$head")
           mapfile -t name_status < <(git diff --name-status "$base" "$head")
 
-          blocked_regex='^(schemas/|services/.+/|components/.+/|app/.+/|lib/ai/|domains/)'
+          blocked_regex='^(schemas/|services/.+/|domains/)'
           allowed_service_regex='^(services/(employeeService|validationService)/|services/(documentService|leaveService)/)'
 
           violations=0

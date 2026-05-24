@@ -19,7 +19,8 @@ jobs:
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       SITE_URL: ${{ secrets.SITE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_CI }}
+      SUPABASE_DB_URL_CI: ${{ secrets.SUPABASE_DB_URL_CI }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       RELEASE_TAG: ${{ github.ref_name }}
       SEED: teamframe-release-v2
@@ -53,7 +54,7 @@ jobs:
             NEXT_PUBLIC_SUPABASE_ANON_KEY
             SITE_URL
             SUPABASE_SERVICE_ROLE_KEY
-            SUPABASE_DB_URL
+            SUPABASE_DB_URL_CI
             OPENAI_API_KEY
           )
 
