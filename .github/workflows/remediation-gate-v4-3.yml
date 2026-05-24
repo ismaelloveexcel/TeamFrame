@@ -64,6 +64,9 @@ jobs:
           TITLE=$(jq -r '.title' pr_meta.json | tr '[:upper:]' '[:lower:]')
 
           case "$BRANCH" in
+            remediation/release*)
+              echo "$TITLE" | grep -Eq "phase 1|phase 1a|release" || { echo "release title mismatch"; exit 1; }
+              ;;
             remediation/phase2*)
               echo "$TITLE" | grep -q "phase 2" || { echo "phase 2 title mismatch"; exit 1; }
               ;;
@@ -264,6 +267,8 @@ jobs:
             ALLOWED='^(app/|middleware/|lib/|tests/|docs/|security/|scripts/)'
           elif [[ "$BRANCH" == remediation/phase4-5* ]]; then
             ALLOWED='^(docs/|README\.md$|app/|components/|lib/|scripts/|\.github/workflows/remediation-)'
+          elif [[ "$BRANCH" == remediation/release* ]]; then
+            ALLOWED='^(\.github/workflows/(ci\.yml$|release\.yml$|remediation-)|\.env\.example$|docs/|scripts/|README\.md$)'
           else
             echo "unknown remediation branch"
             exit 1

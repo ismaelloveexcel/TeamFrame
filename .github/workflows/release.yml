@@ -18,7 +18,8 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       SITE_URL: ${{ secrets.SITE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY_CI: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY_CI }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY_CI }}
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_CI }}
       SUPABASE_DB_URL_CI: ${{ secrets.SUPABASE_DB_URL_CI }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -33,7 +34,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Validate tag format
@@ -53,7 +54,7 @@ jobs:
             NEXT_PUBLIC_SUPABASE_URL
             NEXT_PUBLIC_SUPABASE_ANON_KEY
             SITE_URL
-            SUPABASE_SERVICE_ROLE_KEY
+            SUPABASE_SERVICE_ROLE_KEY_CI
             SUPABASE_DB_URL_CI
             OPENAI_API_KEY
           )
