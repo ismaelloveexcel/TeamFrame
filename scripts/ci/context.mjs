@@ -3,6 +3,11 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import pg from "pg";
 
+function normalizeConnectionString(value) {
+  if (!value) return value;
+  return value.replace(/^"|"$/g, "");
+}
+
 function hash32(value) {
   const hex = createHash("sha256").update(value).digest("hex").slice(0, 8);
   return Number.parseInt(hex, 16) >>> 0;
@@ -83,9 +88,11 @@ export async function getDbSnapshot(connectionString) {
     return null;
   }
 
+  const normalizedConnectionString = normalizeConnectionString(connectionString);
+
   const { Client } = pg;
   const client = new Client({
-    connectionString,
+    connectionString: normalizedConnectionString,
     ssl: { rejectUnauthorized: false },
   });
 

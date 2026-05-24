@@ -23,7 +23,7 @@ const repoRoot = join(__dirname, "..");
 
 dotenv.config({ path: join(repoRoot, ".env.local") });
 
-const connectionString = process.env.SUPABASE_DB_URL;
+const connectionString = process.env.SUPABASE_DB_URL?.replace(/^"|"$/g, "");
 if (!connectionString || connectionString.includes("[YOUR-PASSWORD]")) {
   console.error(
     "✗ SUPABASE_DB_URL is missing or still contains the [YOUR-PASSWORD] placeholder.\n" +

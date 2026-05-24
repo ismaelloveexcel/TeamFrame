@@ -14,7 +14,7 @@ import { getDbSnapshot, getDeterministicContext, snapshotDiff, writeReplayArtifa
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, "..", ".env.local") });
 
-const connectionString = process.env.SUPABASE_DB_URL;
+const connectionString = process.env.SUPABASE_DB_URL?.replace(/^"|"$/g, "");
 if (!connectionString) {
   console.error("✗ SUPABASE_DB_URL is missing from .env.local.");
   process.exit(1);
