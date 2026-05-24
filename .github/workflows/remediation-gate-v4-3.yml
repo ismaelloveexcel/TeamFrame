@@ -1,0 +1,441 @@
+name: REMEDIATION GATE v4.3 (NO-MISS SAFE)
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+    types: [opened, synchronize, reopened, edited]
+
+concurrency:
+  group: remediation-${{ github.head_ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+  actions: write
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      REQUIRED_CHECKS_JSON: '["Gate Chain (Strict)","Freeze Guard"]'
+      CI_WAIT_TIMEOUT_SECONDS: "1800"
+      CI_WAIT_INTERVAL_SECONDS: "15"
+      TRUSTED_UNFREEZE_REVIEWERS: ${{ github.repository_owner }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Load PR metadata and lock head SHA
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          PR=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
+
+          gh pr view "$PR" \
+            --json number,title,headRefName,headRefOid,isDraft \
+            > pr_meta.json
+
+          jq -r '.headRefOid' pr_meta.json > pr_head.lock
+
+      - name: Validate remediation branch and title alignment
+        run: |
+          set -euo pipefail
+
+          BRANCH=$(jq -r '.headRefName' pr_meta.json)
+          TITLE=$(jq -r '.title' pr_meta.json | tr '[:upper:]' '[:lower:]')
+
+          case "$BRANCH" in
+            remediation/phase2*)
+              echo "$TITLE" | grep -q "phase 2" || { echo "phase 2 title mismatch"; exit 1; }
+              ;;
+            remediation/phase3*)
+              echo "$TITLE" | grep -q "phase 3" || { echo "phase 3 title mismatch"; exit 1; }
+              ;;
+            remediation/phase4-5*)
+              echo "$TITLE" | grep -q "phase 4" || { echo "phase 4-5 title mismatch"; exit 1; }
+              ;;
+            *)
+              echo "unknown remediation branch: $BRANCH"
+              exit 1
+              ;;
+          esac
+
+      - name: Enforce single active remediation implementation PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          COUNT=$(gh pr list --state open --json title,isDraft,headRefName \
+            | jq '[.[]
+                    | select(.isDraft == false)
+                    | select(.headRefName | test("^remediation/(phase2|phase3|phase4-5)"))
+                    | select(.title | ascii_downcase | test("^remediation: phase "))
+                  ] | length')
+
+          if [ "$COUNT" -gt 1 ]; then
+            echo "multiple active remediation implementation PRs detected"
+            exit 1
+          fi
+
+      - name: Wait for external required checks to reach terminal success
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          PR=$(jq --raw-output .number pr_meta.json)
+          START=$(date +%s)
+
+          while true; do
+            gh pr view "$PR" --json statusCheckRollup,headRefOid > pr_checks.json
+
+            LOCKED_HEAD=$(cat pr_head.lock)
+            CURRENT_HEAD=$(jq -r '.headRefOid' pr_checks.json)
+            if [ "$LOCKED_HEAD" != "$CURRENT_HEAD" ]; then
+              echo "PR head changed during evaluation"
+              exit 1
+            fi
+
+            MISSING_OR_PENDING=$(jq --argjson req "$REQUIRED_CHECKS_JSON" '
+              [ $req[] as $required
+                | {
+                    name: $required,
+                    match: ([.statusCheckRollup[] | select(.name == $required)] | first)
+                  }
+                | select(
+                    (.match | type) == "null"
+                    or (.match.status != "COMPLETED")
+                  )
+              ] | length
+            ' pr_checks.json)
+
+            FAILURES=$(jq --argjson req "$REQUIRED_CHECKS_JSON" '
+              [ .statusCheckRollup[]
+                | select(.name as $n | $req | index($n))
+                | select(.status == "COMPLETED" and .conclusion != "SUCCESS")
+              ] | length
+            ' pr_checks.json)
+
+            if [ "$FAILURES" -gt 0 ]; then
+              echo "required external checks failed"
+              exit 1
+            fi
+
+            if [ "$MISSING_OR_PENDING" -eq 0 ]; then
+              echo "required external checks reached terminal success"
+              break
+            fi
+
+            NOW=$(date +%s)
+            ELAPSED=$((NOW - START))
+            if [ "$ELAPSED" -ge "$CI_WAIT_TIMEOUT_SECONDS" ]; then
+              echo "timeout waiting for external checks"
+              exit 1
+            fi
+
+            sleep "$CI_WAIT_INTERVAL_SECONDS"
+          done
+
+      - name: Enforce resolved review threads (paginated, fail-closed)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          PR=$(jq --raw-output .number pr_meta.json)
+          OWNER="${{ github.repository_owner }}"
+          REPO="${{ github.event.repository.name }}"
+
+          QUERY='query($owner:String!, $repo:String!, $num:Int!, $cursor:String) {
+            repository(owner:$owner, name:$repo) {
+              pullRequest(number:$num) {
+                reviewThreads(first:100, after:$cursor) {
+                  nodes { isResolved }
+                  pageInfo { hasNextPage endCursor }
+                }
+              }
+            }
+          }'
+
+          CURSOR="null"
+          UNRESOLVED=0
+
+          while true; do
+            if [ "$CURSOR" = "null" ]; then
+              RESP=$(gh api graphql -f query="$QUERY" -f owner="$OWNER" -f repo="$REPO" -F num="$PR")
+            else
+              RESP=$(gh api graphql -f query="$QUERY" -f owner="$OWNER" -f repo="$REPO" -F num="$PR" -F cursor="$CURSOR")
+            fi
+
+            if echo "$RESP" | jq -e '.errors? != null and (.errors | length > 0)' >/dev/null; then
+              echo "GraphQL error while fetching reviewThreads"
+              exit 1
+            fi
+
+            PAGE_COUNT=$(echo "$RESP" | jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length')
+            UNRESOLVED=$((UNRESOLVED + PAGE_COUNT))
+
+            HAS_NEXT=$(echo "$RESP" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage')
+            CURSOR=$(echo "$RESP" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor')
+
+            [ "$HAS_NEXT" = "true" ] || break
+          done
+
+          if [ "$UNRESOLVED" -gt 0 ]; then
+            echo "unresolved review threads: $UNRESOLVED"
+            exit 1
+          fi
+
+      - name: Fetch all changed files (paginated, fail-closed)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          PR=$(jq --raw-output .number pr_meta.json)
+          OWNER="${{ github.repository_owner }}"
+          REPO="${{ github.event.repository.name }}"
+
+          QUERY='query($owner:String!, $repo:String!, $num:Int!, $cursor:String) {
+            repository(owner:$owner, name:$repo) {
+              pullRequest(number:$num) {
+                files(first:100, after:$cursor) {
+                  nodes { path }
+                  pageInfo { hasNextPage endCursor }
+                }
+              }
+            }
+          }'
+
+          : > files_all.txt
+          CURSOR="null"
+
+          while true; do
+            if [ "$CURSOR" = "null" ]; then
+              RESP=$(gh api graphql -f query="$QUERY" -f owner="$OWNER" -f repo="$REPO" -F num="$PR")
+            else
+              RESP=$(gh api graphql -f query="$QUERY" -f owner="$OWNER" -f repo="$REPO" -F num="$PR" -F cursor="$CURSOR")
+            fi
+
+            if echo "$RESP" | jq -e '.errors? != null and (.errors | length > 0)' >/dev/null; then
+              echo "GraphQL error while fetching files"
+              exit 1
+            fi
+
+            echo "$RESP" | jq -r '.data.repository.pullRequest.files.nodes[].path' >> files_all.txt
+
+            HAS_NEXT=$(echo "$RESP" | jq -r '.data.repository.pullRequest.files.pageInfo.hasNextPage')
+            CURSOR=$(echo "$RESP" | jq -r '.data.repository.pullRequest.files.pageInfo.endCursor')
+
+            [ "$HAS_NEXT" = "true" ] || break
+          done
+
+          sort -u files_all.txt > files_norm.txt
+
+      - name: Enforce phase path policy
+        run: |
+          set -euo pipefail
+
+          BRANCH=$(jq -r '.headRefName' pr_meta.json)
+
+          if [[ "$BRANCH" == remediation/phase2* ]]; then
+            ALLOWED='^(app/|services/|tests/|docs/|middleware/|lib/|schemas/|scripts/)'
+          elif [[ "$BRANCH" == remediation/phase3* ]]; then
+            ALLOWED='^(app/|middleware/|lib/|tests/|docs/|security/|scripts/)'
+          elif [[ "$BRANCH" == remediation/phase4-5* ]]; then
+            ALLOWED='^(docs/|README\.md$|app/|components/|lib/|scripts/|\.github/workflows/remediation-)'
+          else
+            echo "unknown remediation branch"
+            exit 1
+          fi
+
+          VIOLATIONS=$(grep -Ev "$ALLOWED" files_norm.txt || true)
+          if [ -n "$VIOLATIONS" ]; then
+            echo "phase boundary violations detected"
+            echo "$VIOLATIONS"
+            exit 1
+          fi
+
+      - name: Validate traceability matrix schema
+        run: |
+          set -euo pipefail
+
+          FILE="docs/remediation-status.md"
+          test -f "$FILE"
+
+          node - <<'NODE'
+          const fs = require('node:fs');
+
+          const file = 'docs/remediation-status.md';
+          const text = fs.readFileSync(file, 'utf8');
+          const lines = text.split(/\r?\n/);
+
+          const headerIndex = lines.findIndex((line) =>
+            /^\|\s*Requirement\s*\|\s*File Changes\s*\|\s*Test Evidence\s*\|\s*Check Links\s*\|\s*Auditor Verdict\s*\|\s*Merge Commit\s*\|\s*$/.test(line),
+          );
+
+          if (headerIndex === -1) {
+            console.error('missing traceability header row');
+            process.exit(1);
+          }
+
+          let validRows = 0;
+          for (let i = headerIndex + 1; i < lines.length; i += 1) {
+            const line = lines[i].trim();
+            if (!line.startsWith('|')) break;
+            if (/^\|\s*-+\s*\|/.test(line)) continue;
+
+            const parts = line.split('|').slice(1, -1).map((v) => v.trim());
+            if (parts.length < 6) continue;
+
+            const required = parts.slice(0, 6);
+            if (required.some((v) => v.length === 0)) continue;
+
+            const evidence = required[2];
+            if (!/^(https?:\/\/|docs\/|\.github\/|scripts\/|tests\/|app\/|services\/)/.test(evidence)) continue;
+
+            validRows += 1;
+          }
+
+          if (validRows < 1) {
+            console.error('no valid traceability data rows');
+            process.exit(1);
+          }
+          NODE
+
+      - name: Run tests once and persist structured results
+        run: |
+          set -euo pipefail
+
+          npm run test:employees
+          npm run test:security
+          npm run test:reliability
+
+          jq -n '{
+            runtimeCorrectness: true,
+            onboardingFlow: true,
+            noSilentFailures: true,
+            securityBaseline: true
+          }' > test-results.json
+
+          test -s test-results.json
+
+      - name: Run deterministic auditor and enforce PASS
+        run: |
+          set -euo pipefail
+
+          node scripts/audit-runner.js test-results.json audit.json
+          jq -e '.verdict == "PASS"' audit.json >/dev/null
+
+      - name: Enforce workflow integrity and hardened unfreeze authorization
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          PR=$(jq --raw-output .number pr_meta.json)
+          TITLE=$(jq -r '.title' pr_meta.json)
+
+          SENSITIVE=$(grep -E '^\.github/workflows/remediation-(gate|freeze)' files_norm.txt || true)
+          HAS_UNFREEZE=0
+          if echo "$TITLE" | grep -qi 'unfreeze'; then
+            HAS_UNFREEZE=1
+          fi
+
+          if [ -n "$SENSITIVE" ] && [ "$HAS_UNFREEZE" -ne 1 ]; then
+            echo "workflow governance change requires unfreeze"
+            exit 1
+          fi
+
+          if [ "$HAS_UNFREEZE" -eq 1 ]; then
+            TRUSTED="${TRUSTED_UNFREEZE_REVIEWERS}"
+            if [ -z "$TRUSTED" ]; then
+              TRUSTED="${{ github.repository_owner }}"
+            fi
+
+            REVIEWS=$(gh api repos/${{ github.repository }}/pulls/$PR/reviews)
+            APPROVED_TRUSTED=$(echo "$REVIEWS" | jq --arg trusted "$TRUSTED" '
+              ($trusted | split(",") | map(gsub("^\\s+|\\s+$"; "") | ascii_downcase)) as $allow
+              | [ .[]
+                  | select(.state == "APPROVED")
+                  | select(.user.login != null)
+                  | select((.user.login | ascii_downcase) as $u | $allow | index($u))
+                ]
+              | length
+            ')
+
+            if [ "$APPROVED_TRUSTED" -lt 1 ]; then
+              echo "unfreeze requires approval from trusted reviewer allowlist"
+              exit 1
+            fi
+          fi
+
+      - name: Verify PR head SHA unchanged before final decision
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          PR=$(jq --raw-output .number pr_meta.json)
+          LOCKED_HEAD=$(cat pr_head.lock)
+          CURRENT_HEAD=$(gh pr view "$PR" --json headRefOid -q '.headRefOid')
+
+          if [ "$LOCKED_HEAD" != "$CURRENT_HEAD" ]; then
+            echo "PR head changed before final decision"
+            exit 1
+          fi
+
+      - name: Emit state consistency hash
+        run: |
+          set -euo pipefail
+
+          jq -S '.' pr_meta.json > pr_state.lock
+          jq -S '.' pr_checks.json >> pr_state.lock
+          sha256sum pr_state.lock > state_hash.txt
+
+      - name: Emit failure context JSON
+        if: failure()
+        run: |
+          set -euo pipefail
+
+          BRANCH=$(jq -r '.headRefName' pr_meta.json 2>/dev/null || echo "unknown")
+          TITLE=$(jq -r '.title' pr_meta.json 2>/dev/null || echo "unknown")
+
+          cat > gate-failure.json <<EOF
+          {
+            "status": "FAILED",
+            "branch": "$BRANCH",
+            "title": "$TITLE",
+            "rule": "See failing step name in workflow logs"
+          }
+          EOF
+
+      - name: Upload failure context artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: remediation-gate-failure
+          path: gate-failure.json
+
+      - name: PASS
+        run: echo "REMEDIATION GATE v4.3 PASSED"

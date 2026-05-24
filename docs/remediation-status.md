@@ -67,6 +67,12 @@ Rollback notes:
 - Architecture/process redesign
 - Feature work outside remediation scope
 
+## Traceability Matrix
+
+| Requirement | File Changes | Test Evidence | Check Links | Auditor Verdict | Merge Commit |
+| --- | --- | --- | --- | --- | --- |
+| Phase 1 governance and CI hardening complete | .github/workflows/ci.yml; .github/workflows/remediation-freeze.yml; scripts/reset-and-apply.mjs; scripts/schema-order.mjs | docs/remediation-evidence/reliability-helper-semantics.md | https://github.com/ismaelloveexcel/TeamFrame/actions/runs/26366650068/job/77611506644; https://github.com/ismaelloveexcel/TeamFrame/actions/runs/26366650078/job/77611506671 | PASS | 77f96a3af611eff13dbc3ecbbc2fa6f524ba47fd |
+
 ## Anti-Drift Rule
 
 Only work items listed in "Locked Next Sequence" are in-scope until Phase 1 is marked closed in this document.
