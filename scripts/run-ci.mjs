@@ -74,7 +74,7 @@ for (let i = 0; i < gates.length; i += 1) {
     },
   });
 
-  gateTrace.push({ gate, exitCode: result.status ?? 0 });
+  gateTrace.push({ gate, exitCode: result.status ?? 1 });
 
   if (result.status !== 0) {
     const code = result.status ?? 1;

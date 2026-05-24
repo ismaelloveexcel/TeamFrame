@@ -102,6 +102,22 @@ async function ensureWorkspaceState(actor: Actor): Promise<WorkspaceValidationSt
     .single();
 
   if (insertError) {
+    if (insertError.code === "23505") {
+      const { data: existingAfterRace, error: raceLookupError } = await supabase
+        .from("workspace_validation_states")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .maybeSingle();
+
+      if (raceLookupError) {
+        throw new Error(`VALIDATION_STATE_LOOKUP_FAILED_AFTER_RACE: ${raceLookupError.message}`);
+      }
+
+      if (existingAfterRace) {
+        return existingAfterRace as WorkspaceValidationState;
+      }
+    }
+
     throw new Error(`VALIDATION_STATE_CREATE_FAILED: ${insertError.message}`);
   }
 
@@ -165,6 +181,7 @@ export async function trackExportEvent(
   const state = await ensureWorkspaceState(actor);
   const supabase = createServiceRoleClient();
   const now = new Date().toISOString();
+  const previousExportCount = state.export_count;
 
   const { data: history, error: historyError } = await supabase
     .from("export_history")
@@ -185,9 +202,10 @@ export async function trackExportEvent(
     throw new Error(`EXPORT_HISTORY_CREATE_FAILED: ${historyError.message}`);
   }
 
-  const exportCount = state.export_count + 1;
+  const historyEntry = history as ExportHistoryEntry;
+
   const updates: Partial<WorkspaceValidationState> = {
-    export_count: exportCount,
+    export_count: previousExportCount + 1,
     last_export_at: now,
     last_active_at: now,
     unresolved_readiness_issues: Math.max(0, input.unresolvedIssues),
@@ -208,16 +226,20 @@ export async function trackExportEvent(
     updates.first_payroll_ready_validation_at = now;
   }
 
-  const { error: updateError } = await supabase
+  const { data: updatedState, error: updateError } = await supabase
     .from("workspace_validation_states")
     .update(updates as never)
-    .eq("tenant_id", tenantId);
+    .eq("tenant_id", tenantId)
+    .eq("export_count", previousExportCount)
+    .select("*")
+    .maybeSingle();
 
-  if (updateError) {
-    throw new Error(`VALIDATION_STATE_AFTER_EXPORT_UPDATE_FAILED: ${updateError.message}`);
+  if (updateError || !updatedState) {
+    await supabase.from("export_history").delete().eq("id", historyEntry.id);
+    throw new Error(`VALIDATION_STATE_AFTER_EXPORT_UPDATE_FAILED: ${updateError?.message ?? "CONCURRENT_EXPORT_STATE_UPDATE"}`);
   }
 
-  return history as ExportHistoryEntry;
+  return historyEntry;
 }
 
 export async function listRecentExportHistory(

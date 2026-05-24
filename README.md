@@ -38,7 +38,7 @@ TeamFrame is not:
 - tax engine
 - workforce management platform
 
-In launch lock mode, only documentation and copy consistency reinforcement are allowed. Do not expand runtime scope, change architecture, or add new behavior.
+Launch lock mode applies after this v1 launch-candidate is merged and tagged. At that point, only documentation and copy consistency reinforcement are allowed. Do not expand runtime scope, change architecture, or add new behavior.
 
 ---
 

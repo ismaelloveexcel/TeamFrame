@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "next dev -p 3030",
     "prebuild": "rimraf .next",
-    "build": "npm run prebuild && next build",
+    "build": "next build",
     "ci:full": "node scripts/run-ci.mjs",
     "test:deterministic": "node scripts/test-deterministic.mjs",
     "test:replay": "node scripts/replay.mjs",
