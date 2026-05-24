@@ -10,7 +10,7 @@ Status key:
 
 | Surface | Risk | Status | Phase Owner | Evidence |
 |---|---|---|---|---|
-| Dormant service domains (`documentService`, `leaveService`) | Behavior/claims drift | OPEN | Phase 5 | docs/PHASE-GATES.md |
+| Dormant service domains (`documentService`, `leaveService`) | Behavior/claims drift | OPEN | Phase 5 | remediation/PHASE-GATES.md |
 | Partial RLS coverage vs service-role paths | False confidence from mismatched enforcement path | OPEN | Phase 1B | remediation negative controls |
 | Export behavior parity (`exportEmployeeDocumentsZip`) | Contract mismatch risk | OPEN | Phase 5 | service/domain review |
 | Audit guarantees across services | Silent compliance drift risk | MITIGATED | Phase 2/3 | telemetry + enforcement logs |

@@ -39,6 +39,7 @@ jobs:
           base="${{ github.event.pull_request.base.sha }}"
           head="${{ github.event.pull_request.head.sha }}"
           mapfile -t files < <(git diff --name-only "$base" "$head")
+          mapfile -t name_status < <(git diff --name-status "$base" "$head")
 
           blocked_regex='^(schemas/|services/.+/|components/.+/|app/.+/|lib/ai/|domains/)'
           allowed_service_regex='^(services/(employeeService|validationService)/|services/(documentService|leaveService)/)'
@@ -50,10 +51,14 @@ jobs:
             if [[ "$f" =~ $blocked_regex ]]; then
               if [[ "$f" =~ $allowed_service_regex ]]; then
                 # Existing services may be edited for remediation, but adding new files in these domains is blocked.
-                if [[ ! -f "$f" ]]; then
-                  echo "blocked (new file in remediation-sensitive service path): $f"
-                  violations=1
-                fi
+                for row in "${name_status[@]}"; do
+                  IFS=$'\t' read -r status changed_path _ <<< "$row"
+                  if [[ "$status" == A* ]] && [[ "$changed_path" == "$f" ]]; then
+                    echo "blocked (new file in remediation-sensitive service path): $f"
+                    violations=1
+                    break
+                  fi
+                done
                 continue
               fi
 

@@ -32,4 +32,4 @@ One sentence only.
 
 - [ ] No empty `catch {}` added in `app/`, `lib/`, `middleware/`, `services/`.
 - [ ] No silent success path introduced for persistence/audit/redirect/external side effects.
-- [ ] `docs/known-unsafe-surfaces.md` updated if impacted.
+- [ ] `remediation/known-unsafe-surfaces.md` updated if impacted.
