@@ -54,6 +54,8 @@ alter table documents enable row level security;
 alter table leaves enable row level security;
 alter table company_updates enable row level security;
 alter table audit_logs enable row level security;
+alter table workspace_validation_states enable row level security;
+alter table export_history enable row level security;
 alter table policies enable row level security;
 alter table procedures enable row level security;
 alter table acknowledgements enable row level security;
@@ -216,6 +218,50 @@ using (
 
 drop policy if exists audit_logs_insert_admin on audit_logs;
 create policy audit_logs_insert_admin on audit_logs
+for insert
+with check (
+  is_current_actor_admin()
+  and tenant_id = current_actor_tenant_id()
+);
+
+drop policy if exists workspace_validation_states_admin_only on workspace_validation_states;
+create policy workspace_validation_states_admin_only on workspace_validation_states
+for select
+using (
+  is_current_actor_admin()
+  and tenant_id = current_actor_tenant_id()
+);
+
+drop policy if exists workspace_validation_states_insert_admin on workspace_validation_states;
+create policy workspace_validation_states_insert_admin on workspace_validation_states
+for insert
+with check (
+  is_current_actor_admin()
+  and tenant_id = current_actor_tenant_id()
+);
+
+drop policy if exists workspace_validation_states_update_admin on workspace_validation_states;
+create policy workspace_validation_states_update_admin on workspace_validation_states
+for update
+using (
+  is_current_actor_admin()
+  and tenant_id = current_actor_tenant_id()
+)
+with check (
+  is_current_actor_admin()
+  and tenant_id = current_actor_tenant_id()
+);
+
+drop policy if exists export_history_admin_only on export_history;
+create policy export_history_admin_only on export_history
+for select
+using (
+  is_current_actor_admin()
+  and tenant_id = current_actor_tenant_id()
+);
+
+drop policy if exists export_history_insert_admin on export_history;
+create policy export_history_insert_admin on export_history
 for insert
 with check (
   is_current_actor_admin()

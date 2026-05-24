@@ -26,3 +26,98 @@ body {
   background: var(--color-ink-900);
   color: var(--color-paper);
 }
+
+@layer components {
+  .tf-panel {
+    border: 1px solid color-mix(in srgb, var(--color-ink-300) 76%, transparent);
+    border-radius: 14px;
+    background: color-mix(in srgb, white 84%, transparent);
+  }
+
+  .tf-kpi {
+    border: 1px solid color-mix(in srgb, var(--color-ink-300) 70%, transparent);
+    border-radius: 12px;
+    background: color-mix(in srgb, white 78%, transparent);
+    padding: 14px;
+  }
+
+  .tf-input {
+    border: 1px solid var(--color-ink-300);
+    border-radius: 10px;
+    padding: 9px 12px;
+    font-size: 14px;
+    transition: border-color 160ms ease, box-shadow 160ms ease;
+    background: white;
+  }
+
+  .tf-input:focus {
+    outline: none;
+    border-color: var(--color-ink-700);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-ink-300) 42%, transparent);
+  }
+
+  .tf-button-primary {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 10px;
+    padding: 9px 14px;
+    font-size: 14px;
+    font-weight: 600;
+    background: var(--color-ink-900);
+    color: var(--color-paper);
+    transition: background-color 160ms ease;
+  }
+
+  .tf-button-primary:hover {
+    background: var(--color-ink-700);
+  }
+
+  .tf-button-secondary {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--color-ink-300);
+    border-radius: 10px;
+    padding: 9px 12px;
+    font-size: 14px;
+    color: var(--color-ink-700);
+    transition: border-color 160ms ease, color 160ms ease;
+    background: white;
+  }
+
+  .tf-button-secondary:hover {
+    border-color: var(--color-ink-700);
+    color: var(--color-ink-900);
+  }
+
+  .tf-status-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--color-ink-300) 78%, transparent);
+    padding: 3px 9px;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-ink-700);
+    background: color-mix(in srgb, white 80%, transparent);
+  }
+
+  .tf-status-badge[data-tone="ready"] {
+    border-color: color-mix(in srgb, var(--color-accent) 28%, white);
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 9%, white);
+  }
+
+  .tf-status-badge[data-tone="attention"] {
+    border-color: color-mix(in srgb, #9c6a1a 30%, white);
+    color: #7a5314;
+    background: color-mix(in srgb, #c58a27 10%, white);
+  }
+
+  .tf-status-badge[data-tone="inactive"] {
+    border-color: color-mix(in srgb, var(--color-ink-300) 90%, white);
+    color: var(--color-ink-500);
+    background: color-mix(in srgb, var(--color-ink-100) 75%, white);
+  }
+}

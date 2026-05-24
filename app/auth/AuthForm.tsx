@@ -10,9 +10,9 @@ function SubmitButton() {
     <button
       type="submit"
       disabled={pending}
-      className="w-full rounded-full bg-ink-900 px-5 py-3 text-[15px] font-medium text-paper transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:bg-ink-300"
+      className="tf-button-primary w-full justify-center rounded-full px-5 py-3 text-[15px] disabled:cursor-not-allowed disabled:bg-ink-300"
     >
-      {pending ? "Sending…" : "Send link"}
+      {pending ? "Sending access link..." : "Send secure access link"}
     </button>
   );
 }
@@ -31,12 +31,13 @@ export function AuthForm({ errorMessage }: { errorMessage: string | null }) {
         required
         inputMode="email"
         placeholder="you@company.com"
-        className="w-full rounded-full border border-ink-300 bg-white px-5 py-3 text-[15px] outline-none transition focus:border-ink-900"
+        className="tf-input w-full rounded-full px-5 py-3 text-[15px]"
       />
+      <p className="text-[12px] text-ink-500">Use the email already attached to your data record.</p>
       <SubmitButton />
 
       {errorMessage ? (
-        <p role="alert" className="text-[13px] text-accent">
+        <p role="alert" className="rounded-md border border-accent/35 bg-white/80 px-3 py-2 text-[13px] text-accent">
           {errorMessage}
         </p>
       ) : null}
