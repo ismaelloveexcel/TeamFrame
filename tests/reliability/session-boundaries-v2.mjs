@@ -8,7 +8,7 @@ import { getDeterministicContext } from "../../scripts/ci/context.mjs";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, "..", "..", ".env.local") });
 
-const dbUrl = process.env.SUPABASE_DB_URL;
+const dbUrl = process.env.SUPABASE_DB_URL?.replace(/^"|"$/g, "");
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -33,17 +33,26 @@ async function asActor(client, claims) {
   await client.query("select set_config('request.jwt.claims', $1, false)", [JSON.stringify(claims)]);
 }
 
+// Denial semantics:
+// - explicit SQL error
+// - OR zero affected rows under RLS filtering
+// Both are treated as authorization denial.
 async function expectDenied(client, claims, fn, message) {
+  let denied = false;
   await client.query("savepoint denied_case");
   try {
     await asActor(client, claims);
-    await fn();
-    await client.query("rollback to savepoint denied_case");
-    await client.query("release savepoint denied_case");
-    throw new Error(message);
+    const result = await fn();
+    denied = !result || result.rowCount === 0;
   } catch {
+    denied = true;
+  } finally {
     await client.query("rollback to savepoint denied_case");
     await client.query("release savepoint denied_case");
+  }
+
+  if (!denied) {
+    throw new Error(message);
   }
 }
 
@@ -118,7 +127,7 @@ async function main() {
       client,
       employeeClaims,
       async () => {
-        await client.query(
+        return client.query(
           `insert into audit_logs (tenant_id, actor_user_id, action_type, target_id)
            values ($1, $2, 'session.boundary.denied', $3)`,
           [tenantA, employeeAuthId, employeeRowId],
@@ -138,7 +147,7 @@ async function main() {
       client,
       adminClaims,
       async () => {
-        await client.query(
+        return client.query(
           `insert into employees (tenant_id, full_name, email, role_title, department, timezone, status, setup_status)
            values ($1, 'Replay Spoof', $2, 'Ops', 'Operations', 'UTC', 'active', 'ready')`,
           [tenantB, ctx.deterministicEmail("replay", "reliability.test")],

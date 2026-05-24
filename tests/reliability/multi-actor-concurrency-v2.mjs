@@ -8,7 +8,7 @@ import { getDeterministicContext } from "../../scripts/ci/context.mjs";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, "..", "..", ".env.local") });
 
-const dbUrl = process.env.SUPABASE_DB_URL;
+const dbUrl = process.env.SUPABASE_DB_URL?.replace(/^"|"$/g, "");
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -33,15 +33,27 @@ async function asActor(client, claims) {
   await client.query("select set_config('request.jwt.claims', $1, false)", [JSON.stringify(claims)]);
 }
 
+// Denial semantics:
+// - explicit SQL error
+// - OR zero affected rows under RLS filtering
+// Both are treated as authorization denial.
 async function expectDenied(client, claims, sql, params, message) {
+  let denied = false;
   await client.query("begin");
   try {
     await asActor(client, claims);
-    await client.query(sql, params);
-    await client.query("rollback");
-    throw new Error(message);
+    const result = await client.query(sql, params);
+    denied = result.rowCount === 0;
   } catch {
+    denied = true;
+  } finally {
     await client.query("rollback");
+    await client.query("reset role");
+    await client.query("select set_config('request.jwt.claims', '', true)");
+  }
+
+  if (!denied) {
+    throw new Error(message);
   }
 }
 

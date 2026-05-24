@@ -14,7 +14,7 @@ dotenv.config({ path: join(__dirname, "..", ".env.local") });
 
 const { Client } = pg;
 const client = new Client({
-  connectionString: process.env.SUPABASE_DB_URL,
+  connectionString: process.env.SUPABASE_DB_URL?.replace(/^"|"$/g, ""),
   ssl: { rejectUnauthorized: false },
 });
 

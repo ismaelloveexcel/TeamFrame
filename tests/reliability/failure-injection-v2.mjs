@@ -8,7 +8,7 @@ import { getDeterministicContext } from "../../scripts/ci/context.mjs";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, "..", "..", ".env.local") });
 
-const dbUrl = process.env.SUPABASE_DB_URL;
+const dbUrl = process.env.SUPABASE_DB_URL?.replace(/^"|"$/g, "");
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 

@@ -15,22 +15,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import dotenv from "dotenv";
+import { SCHEMA_ORDER } from "./schema-order.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..");
 dotenv.config({ path: join(repoRoot, ".env.local") });
-
-const SCHEMA_ORDER = [
-  "companies.sql",
-  "employees.sql",
-  "employee_profiles.sql",
-  "compensation.sql",
-  "documents.sql",
-  "leaves.sql",
-  "company_updates.sql",
-  "audit_logs.sql",
-  "tenancy_rls.sql",
-];
 
 const TEAMFRAME_ENUMS = [
   "employee_status",
@@ -39,9 +28,44 @@ const TEAMFRAME_ENUMS = [
   "leave_status",
 ];
 
-const connectionString = process.env.SUPABASE_DB_URL;
+const connectionString = process.env.SUPABASE_DB_URL?.replace(/^"|"$/g, "");
 if (!connectionString) {
   console.error("✗ SUPABASE_DB_URL is missing from .env.local.");
+  process.exit(1);
+}
+
+const ALLOW_DESTRUCTIVE_RESET = process.env.ALLOW_DESTRUCTIVE_RESET;
+if (ALLOW_DESTRUCTIVE_RESET !== "yes-i-mean-it") {
+  console.error(
+    "✗ Refusing destructive reset. Set ALLOW_DESTRUCTIVE_RESET=yes-i-mean-it to continue.",
+  );
+  process.exit(1);
+}
+
+const isCi = String(process.env.CI ?? "").toLowerCase() === "true";
+if (isCi && process.env.ALLOW_DESTRUCTIVE_RESET_IN_CI !== "yes-i-mean-it") {
+  console.error(
+    "✗ Refusing destructive reset in CI. Set ALLOW_DESTRUCTIVE_RESET_IN_CI=yes-i-mean-it to continue.",
+  );
+  process.exit(1);
+}
+
+function extractHost(dbUrl) {
+  const normalized = dbUrl.replace(/^"|"$/g, "");
+  const parsed = new URL(normalized);
+  return parsed.hostname.toLowerCase();
+}
+
+const dbHost = extractHost(connectionString);
+const protectedHostTokens = (process.env.PROTECTED_DB_HOST_TOKENS ?? "")
+  .split(",")
+  .map((token) => token.trim().toLowerCase())
+  .filter(Boolean);
+
+if (protectedHostTokens.some((token) => dbHost.includes(token))) {
+  console.error(
+    `✗ Refusing destructive reset for protected host '${dbHost}'. Review PROTECTED_DB_HOST_TOKENS.`,
+  );
   process.exit(1);
 }
 
