@@ -1,47 +1,17 @@
 #!/usr/bin/env node
 
 /**
- * Guardrail self-test: verifies the same deny-path shape used by the v2 reliability helpers.
- * This test is DB-free and validates helper semantics directly.
+ * Compatibility entrypoint used by CI.
+ * The dedicated contract lives in scripts/reliability-helper-contract-selftest.mjs.
  */
 
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
+import { runReliabilityHelperContractSelftest } from "./reliability-helper-contract-selftest.mjs";
 
-async function correctedExpectDenied(runDeniedPath, message) {
-  let denied = false;
-  try {
-    const result = await runDeniedPath();
-    denied = !result || result.rowCount === 0;
-  } catch {
-    denied = true;
-  }
-  assert(denied, message);
-}
-
-async function main() {
-  // Path 1: operation is denied and throws -> should pass
-  await correctedExpectDenied(async () => {
-    throw new Error("denied");
-  }, "expected denied path to throw");
-
-  // Path 2: operation succeeds but affects zero rows -> should also pass
-  await correctedExpectDenied(async () => ({ rowCount: 0 }), "expected denied path to affect zero rows");
-
-  // Path 3: operation succeeds and affects rows -> should fail the assertion
-  let failedAsExpected = false;
-  try {
-    await correctedExpectDenied(async () => ({ rowCount: 1 }), "operation should have been denied");
-  } catch {
-    failedAsExpected = true;
-  }
-
-  assert(failedAsExpected, "self-test did not detect allowed path");
-  console.log("✓ reliability helper self-test passed");
-}
-
-main().catch((err) => {
+runReliabilityHelperContractSelftest()
+  .then(() => {
+    console.log("✓ reliability helper self-test passed");
+  })
+  .catch((err) => {
   console.error(`✗ reliability helper self-test failed: ${err.message}`);
   process.exit(1);
-});
+  });

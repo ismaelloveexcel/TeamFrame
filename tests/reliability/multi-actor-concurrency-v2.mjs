@@ -33,6 +33,10 @@ async function asActor(client, claims) {
   await client.query("select set_config('request.jwt.claims', $1, false)", [JSON.stringify(claims)]);
 }
 
+// Denial semantics:
+// - explicit SQL error
+// - OR zero affected rows under RLS filtering
+// Both are treated as authorization denial.
 async function expectDenied(client, claims, sql, params, message) {
   let denied = false;
   await client.query("begin");
