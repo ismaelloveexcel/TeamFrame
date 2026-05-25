@@ -50,13 +50,20 @@ KPIs:
 ## Phase Progress
 
 ### Phase 1 — Surface Truth (Days 1–2)
-- [ ] Kill List applied
-- [ ] README aligned with shipped features
-- [ ] Dashboard cleaned (live data or honest empty states)
-- [ ] Dead nav routes removed
-- [ ] API responses reconciled with UI claims
+- [x] Kill List applied (PR #49)
+- [x] README aligned with shipped features (PR #51)
+- [x] Dashboard cleaned (live data + honest empty states) (PR #50)
+- [x] Dead nav routes removed (audited #21 — no-op)
+- [x] API responses reconciled with UI claims (audited #22 — no-op)
 
-Success metric: zero false feature surfaces.
+Success metric: zero false feature surfaces. ✅
+
+---
+
+## Parked (explicitly out of this 14-day sprint)
+
+- **Company Announcements** — schema file remains in `/schemas/company_updates.sql`; no service, no UI, no roadmap commitment. Re-evaluated post-Phase 1 against activation telemetry.
+- **AI features** (`generateBio`, `generateContract`) — removed in Phase 1 cleanup. Re-entry gate: ≥5 active companies + measurable onboarding usage + stable audit/security layer + clear user demand signal.
 
 ---
 
