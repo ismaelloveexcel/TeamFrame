@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { CookieOptions } from "@supabase/ssr";
 import { createServerClient } from "@supabase/ssr";
 
-const PROTECTED_PREFIXES = ["/dashboard", "/employees", "/admin"] as const;
+const PROTECTED_PREFIXES = ["/dashboard", "/employees", "/admin", "/org-chart"] as const;
 
 function isProtectedPath(pathname: string): boolean {
   return PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
@@ -66,5 +66,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/employees/:path*", "/admin/:path*"],
+  matcher: ["/dashboard/:path*", "/employees/:path*", "/admin/:path*", "/org-chart/:path*"],
 };
