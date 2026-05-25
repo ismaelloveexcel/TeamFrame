@@ -48,7 +48,6 @@ export default async function EmployeesPage({
             <p className="text-[12px] tracking-[0.14em] text-ink-500">Directory</p>
             <h1 className="text-[34px] leading-tight tracking-tight">People map</h1>
           </div>
-          <p className="text-[12px] text-ink-500">Published 22 May 2026 · 14:02 UTC</p>
         </div>
         <p className="mt-7 max-w-prose text-[15px] text-ink-700">
           Team structure with role, department, and reporting lines.
@@ -73,7 +72,6 @@ export default async function EmployeesPage({
           <p className="text-[12px] tracking-[0.14em] text-ink-500">Admin queue</p>
           <h1 className="text-[34px] leading-tight tracking-tight">Employee pipeline</h1>
         </div>
-        <p className="text-[12px] text-ink-500">Published 22 May 2026 · 14:02 UTC</p>
       </div>
 
       <p className="mt-7 max-w-2xl text-[15px] text-ink-700">
