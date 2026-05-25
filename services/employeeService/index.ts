@@ -347,7 +347,14 @@ export async function createEmployee(actor: Actor, input: unknown): Promise<Empl
   const created = data as unknown as EmployeeRow;
 
   // Employee row creation is authoritative; auth invite is best-effort.
-  await inviteEmployeeAuthUser(created.email, tenantId);
+  try {
+    await inviteEmployeeAuthUser(created.email, tenantId);
+  } catch (inviteErr) {
+    console.error(
+      "EMPLOYEE_INVITE_UNHANDLED",
+      inviteErr instanceof Error ? inviteErr.message : String(inviteErr),
+    );
+  }
 
   await writeAudit(actor, "employee.created", created.id);
 
