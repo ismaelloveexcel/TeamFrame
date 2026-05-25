@@ -54,9 +54,18 @@ alter table documents enable row level security;
 alter table leaves enable row level security;
 alter table company_updates enable row level security;
 alter table audit_logs enable row level security;
+alter table analytics_events enable row level security;
 alter table policies enable row level security;
 alter table procedures enable row level security;
 alter table acknowledgements enable row level security;
+
+drop policy if exists analytics_events_select on analytics_events;
+create policy analytics_events_select on analytics_events
+for select
+using (
+  is_current_actor_admin()
+  and (tenant_id is null or tenant_id = current_actor_tenant_id())
+);
 
 drop policy if exists employees_select on employees;
 create policy employees_select on employees

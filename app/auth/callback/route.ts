@@ -14,6 +14,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@/lib/db/supabaseServer";
 import { resolveIdentity } from "@/lib/rbac/roles";
+import { track } from "@/lib/telemetry/track";
 
 function safeNext(raw: string | null): string {
   if (!raw) return "/dashboard";
@@ -94,6 +95,13 @@ export async function GET(request: NextRequest) {
     await supabase.auth.signOut();
     return redirectTo(origin, "/auth?error=not_authorized", request, true);
   }
+
+  await track({
+    tenantId: identity.tenantId,
+    userId: identity.authUserId,
+    eventName: "session_started",
+    properties: { role: identity.role },
+  });
 
   return redirectTo(origin, next, request);
 }
