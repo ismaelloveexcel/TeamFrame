@@ -131,6 +131,107 @@ function toEmployeeFullRecord(row: EmployeeRow): EmployeeFullRecord {
   };
 }
 
+function getAuthErrorCode(error: unknown): string {
+  if (!error || typeof error !== "object") {
+    return "";
+  }
+  const maybeCode = (error as { code?: unknown }).code;
+  return typeof maybeCode === "string" ? maybeCode.toLowerCase() : "";
+}
+
+function isAlreadyExistsAuthError(error: unknown): boolean {
+  const code = getAuthErrorCode(error);
+  if (code.includes("already_exists") || code.includes("exists")) {
+    return true;
+  }
+
+  const message =
+    error && typeof error === "object" && typeof (error as { message?: unknown }).message === "string"
+      ? (error as { message: string }).message.toLowerCase()
+      : "";
+
+  return message.includes("already exists") || message.includes("already_registered");
+}
+
+async function findAuthUserIdByEmail(email: string): Promise<string | null> {
+  const supabase = createServiceRoleClient();
+  const normalizedEmail = email.toLowerCase();
+
+  for (let page = 1; page <= 10; page += 1) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 100 });
+    if (error) {
+      console.error("EMPLOYEE_INVITE_LIST_USERS_FAILED", error.message);
+      return null;
+    }
+
+    const users = data?.users ?? [];
+    const match = users.find((user) => user.email?.toLowerCase() === normalizedEmail);
+    if (match?.id) {
+      return match.id;
+    }
+
+    if (users.length < 100) {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+async function setEmployeeAuthMetadata(userId: string, tenantId: string): Promise<void> {
+  const supabase = createServiceRoleClient();
+  const { data: userData, error: userError } = await supabase.auth.admin.getUserById(userId);
+  if (userError || !userData?.user) {
+    console.error("EMPLOYEE_INVITE_GET_USER_FAILED", userError?.message ?? "USER_NOT_FOUND");
+    return;
+  }
+
+  const currentAppMetadata =
+    userData.user.app_metadata && typeof userData.user.app_metadata === "object"
+      ? (userData.user.app_metadata as Record<string, unknown>)
+      : {};
+
+  const { error: updateError } = await supabase.auth.admin.updateUserById(userId, {
+    app_metadata: {
+      ...currentAppMetadata,
+      role: "employee",
+      tenant_id: tenantId,
+    },
+  });
+
+  if (updateError) {
+    console.error("EMPLOYEE_INVITE_METADATA_UPDATE_FAILED", updateError.message);
+  }
+}
+
+async function inviteEmployeeAuthUser(email: string, tenantId: string): Promise<void> {
+  const supabase = createServiceRoleClient();
+  const { data, error } = await supabase.auth.admin.inviteUserByEmail(email, {
+    data: {
+      role: "employee",
+      tenant_id: tenantId,
+    },
+    redirectTo: `${process.env.SITE_URL}/auth/callback`,
+  });
+
+  if (error) {
+    if (!isAlreadyExistsAuthError(error)) {
+      console.error("EMPLOYEE_INVITE_FAILED", error.message);
+      return;
+    }
+
+    const existingUserId = await findAuthUserIdByEmail(email);
+    if (existingUserId) {
+      await setEmployeeAuthMetadata(existingUserId, tenantId);
+    }
+    return;
+  }
+
+  if (data?.user?.id) {
+    await setEmployeeAuthMetadata(data.user.id, tenantId);
+  }
+}
+
 async function rowExistsForTenant(
   actor: Actor,
   employeeId: string,
@@ -244,6 +345,9 @@ export async function createEmployee(actor: Actor, input: unknown): Promise<Empl
   }
 
   const created = data as unknown as EmployeeRow;
+
+  // Employee row creation is authoritative; auth invite is best-effort.
+  await inviteEmployeeAuthUser(created.email, tenantId);
 
   await writeAudit(actor, "employee.created", created.id);
 
