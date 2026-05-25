@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   quality:
-    name: Quality
+    name: Gate Chain (Strict)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
