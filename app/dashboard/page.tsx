@@ -18,6 +18,7 @@ export default async function DashboardPage() {
       <nav className="mb-6 flex gap-4 text-[14px] text-ink-500">
         <span className="text-ink-900 font-medium">Dashboard</span>
         <Link href="/employees" className="hover:text-ink-900 transition">Employees</Link>
+        <Link href="/onboarding" className="hover:text-ink-900 transition">Onboarding</Link>
         <Link href="/leaves" className="hover:text-ink-900 transition">Leaves</Link>
       </nav>
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-ink-300/60 pb-5">

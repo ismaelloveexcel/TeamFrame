@@ -58,6 +58,7 @@ alter table analytics_events enable row level security;
 alter table policies enable row level security;
 alter table procedures enable row level security;
 alter table acknowledgements enable row level security;
+alter table onboarding_tasks enable row level security;
 
 drop policy if exists analytics_events_select on analytics_events;
 create policy analytics_events_select on analytics_events
