@@ -10,6 +10,7 @@
 import "server-only";
 import type { Actor } from "@/middleware/rbac";
 import { createServiceRoleClient } from "@/lib/db/supabaseServer";
+import { track } from "@/lib/telemetry/track";
 
 export type LeaveStatus = "pending" | "approved" | "rejected";
 
@@ -121,6 +122,16 @@ export async function submitLeaveRequest(
 
   const created = data as LeaveRow;
   await writeAudit(actor, "leave.submitted", created.id);
+
+  // Fire first_leave_requested once per tenant
+  const countResult = await supabase
+    .from("leaves")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", tenantId);
+  if ((countResult.count ?? 0) === 1) {
+    await track({ tenantId, userId: actor.authUserId, eventName: "first_leave_requested", properties: { leave_id: created.id } });
+  }
+
   const { tenant_id: _tenantId, ...row } = created;
   return row;
 }
@@ -153,6 +164,19 @@ export async function decideLeaveRequest(
   }
 
   await writeAudit(actor, decision === "approved" ? "leave.approved" : "leave.rejected", leaveId);
+
+  // Fire first_leave_approved once per tenant
+  if (decision === "approved") {
+    const countResult = await supabase
+      .from("leaves")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("status", "approved");
+    if ((countResult.count ?? 0) === 1) {
+      await track({ tenantId, userId: actor.authUserId, eventName: "first_leave_approved", properties: { leave_id: leaveId } });
+    }
+  }
+
   const { tenant_id: _tenantId, ...row } = data as LeaveRow;
   return row;
 }

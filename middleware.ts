@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { CookieOptions } from "@supabase/ssr";
 import { createServerClient } from "@supabase/ssr";
 
-const PROTECTED_PREFIXES = ["/dashboard", "/employees", "/org-chart"] as const;
+const PROTECTED_PREFIXES = ["/dashboard", "/employees", "/org-chart", "/leaves"] as const;
 
 function isProtectedPath(pathname: string): boolean {
   return PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
