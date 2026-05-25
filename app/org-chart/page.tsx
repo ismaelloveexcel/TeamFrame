@@ -3,6 +3,8 @@ import { listOrgChart } from "@/services/employeeService";
 import { OrgChart } from "@/components/OrgChart";
 import Link from "next/link";
 
+export const dynamic = "force-dynamic";
+
 export default async function OrgChartPage() {
   const actor = await requireTenantActor();
   const employees = await listOrgChart(actor);
