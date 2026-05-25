@@ -8,20 +8,32 @@ This README is **the enforcement contract for TeamFrame V1**. If a feature, depe
 
 ---
 
-## What TeamFrame is
+## Currently shipped (truth)
 
-The product provides exactly these things:
+As of the latest commit on `main`, the running app provides:
 
-- **Employee directory** — who's on the team
-- **Org visibility** — a simple org chart
-- **Onboarding document hub** — upload, download, grouped export
-- **Minimal leave tracking** — request, approve, reject
-- **Company updates** — a simple announcement feed
-- **Two constrained AI helpers** (see *AI Limitations*):
-  - `generateBio(cvText)` — CV text → 3–5 sentence bio
-  - `generateContract(employeeData)` — typed fields → contract template
+- **Auth** — Supabase magic-link sign-in (`/auth`, `/auth/callback`, `/auth/check-email`, `/auth/logout`).
+- **Dashboard** (`/dashboard`) — real employee counts (total / active / on leave / inactive) with an honest empty state when no employees exist.
+- **Employees** (`/employees`) — admins can create / update / archive; non-admins see a read-only org-chart view.
+- **Org chart** (`/org-chart`) — whitelist-only employee-scope view.
+- **Tenant safety** — server-side role resolution via `requireTenantActor`, every service call takes an explicit `Actor`, RLS on every table.
+
+Everything in the next section ("What TeamFrame is") describes the V1 *target surface*. Items not in the list above are **not yet in the UI**.
+
+---
+
+## What TeamFrame is (V1 target)
+
+The product targets exactly these things:
+
+- **Employee directory** — who's on the team _(shipped)_
+- **Org visibility** — a simple org chart _(shipped)_
+- **Onboarding document hub** — upload, download, grouped export _(schema + service scaffolded; no UI yet)_
+- **Minimal leave tracking** — request, approve, reject _(schema + service scaffolded; no UI yet)_
 
 Nothing more.
+
+Company announcements are **parked**: not in V1 sprint scope. The `company_updates.sql` schema file remains in `/schemas` as a future hook but has no service, no UI, and no roadmap commitment until activation telemetry justifies it.
 
 ---
 
@@ -52,14 +64,14 @@ If a feature resembles **enterprise HRIS**, **workflow automation**, or **AI ass
 ## Anti-drift rules
 
 1. **No new module unless it's already in the allow list above.**
-2. **No new AI function** without removing one. The surface is locked at two.
+2. **No AI surface in V1.** The previous `/lib/ai` scaffold was removed; reintroducing AI requires an explicit V2 decision.
 3. **No new role** beyond `admin` and `employee`.
 4. **No new background subsystem** (queue, scheduler, worker, event bus) in V1.
 5. **No premature scalability work** (multi-region, sharding, microservices).
 6. **No client-side authorization** as a security boundary.
 7. **No service-role key** in any code path reachable from the browser.
 
-Detailed bans live in [`docs/drift-guard.md`](docs/drift-guard.md). The Cursor rule at [`.cursor/rules/teamframe-rules.md`](.cursor/rules/teamframe-rules.md) enforces this in the editor.
+Detailed bans live in [`docs/drift-guard.md`](docs/drift-guard.md).
 
 ---
 
@@ -87,50 +99,34 @@ Full detail: [`docs/architecture.md`](docs/architecture.md).
 
 ```
 /app
-  /dashboard          # counts + latest items only
-  /employees          # directory + org chart
-  /admin              # admin-only surface
-  /auth               # sign-in
+  /dashboard          # live counts (real data) + empty state
+  /employees          # directory + admin CRUD + actions
+  /org-chart          # read-only org view
+  /auth               # magic-link sign-in + callback + logout
 
 /lib
-  /ai                 # exactly 2 functions: generateBio, generateContract
   /db                 # Supabase server + browser clients, env access
   /rbac               # role types + resolver
 
 /components
-  /OrgChart
-  /EmployeeProfile
-  /LeaveSystem
+  /OrgChart           # the only component used by /app today
 
 /services
-  /employeeService    # explicit Actor on every call
-  /documentService
-  /leaveService
+  /employeeService    # shipped; explicit Actor on every call
+  /documentService    # scaffolded, not yet surfaced in UI
+  /leaveService       # scaffolded, not yet surfaced in UI
 
 /middleware
   auth.ts             # session resolution
-  rbac.ts             # role guards (requireRole, requireSelfOrAdmin)
+  rbac.ts             # role guards (requireRole, requireTenantActor)
 
 /schemas
-  employees.sql
-  employee_profiles.sql
-  compensation.sql
-  documents.sql
-  leaves.sql
-  company_updates.sql
-  audit_logs.sql
+  employees.sql, employee_profiles.sql, compensation.sql, documents.sql,
+  leaves.sql, company_updates.sql, audit_logs.sql
 
 /docs
-  architecture.md
-  drift-guard.md
-  rbac-rules.md
-  auth-rules.md
-  ai-boundaries.md
-  operational-canon.md
-  bootstrap-prompt.md
-
-/.cursor/rules
-  teamframe-rules.md
+  architecture.md, drift-guard.md, rbac-rules.md, auth-rules.md,
+  ai-boundaries.md, bootstrap-prompt.md, 14-day-sprint-tracker.md
 ```
 
 ---
@@ -139,10 +135,9 @@ Full detail: [`docs/architecture.md`](docs/architecture.md).
 
 - **Frontend**: Next.js App Router + TypeScript + TailwindCSS
 - **Backend**: Supabase Postgres + Supabase Storage + Supabase Auth
-- **AI**: OpenAI API only, server-side only, isolated in `/lib/ai`
 - **Deployment**: Vercel
 
-No multi-provider AI abstraction. No alternate auth provider. No alternate DB. Switching any of these is V2.
+No AI provider in V1. No alternate auth provider. No alternate DB. Switching any of these is V2.
 
 ---
 
@@ -151,7 +146,6 @@ No multi-provider AI abstraction. No alternate auth provider. No alternate DB. S
 ### 1. Prerequisites
 - Node.js 20+
 - A Supabase project (Postgres + Storage + Auth)
-- An OpenAI API key
 
 ### 2. Clone and install
 ```bash
@@ -173,7 +167,6 @@ Required:
 - `SITE_URL` *(local dev default: `http://localhost:3030`)*
 - `SUPABASE_SERVICE_ROLE_KEY` *(server-only — never expose)*
 - `SUPABASE_DB_URL` *(server-only — used by database setup scripts)*
-- `OPENAI_API_KEY` *(server-only — used only by `/lib/ai`)*
 
 ### 4. Apply database and storage setup
 ```bash
@@ -266,27 +259,23 @@ Deferred to V2 (intentionally): compliance dashboards, consent management UI, au
 
 ## AI limitations
 
-AI in TeamFrame is **strictly limited** to two functions, both server-side, both in `/lib/ai`:
+AI is **not part of V1**. The previous `/lib/ai` scaffold (`generateBio`, `generateContract`) was removed during Phase 1 surface cleanup because it was never wired to any UI. Re-introducing AI requires:
 
-| Function | Input | Output |
-|---|---|---|
-| `generateBio(cvText)` | CV text only (string) | 3–5 sentence professional bio |
-| `generateContract(employeeData)` | Typed contract fields only | Contract template (markdown) |
+- an explicit V2 product decision,
+- a server-only module in `/lib/ai`,
+- and updates to [`docs/ai-boundaries.md`](docs/ai-boundaries.md).
 
-AI must **never**:
-- query the database directly
-- receive an unscoped employee record
-- access compensation implicitly
-- act as an HR advisor or chatbot
-- generate HR, legal, or compliance advice
-- score, rank, or compare employees
-- infer personality, sentiment, or performance
-- generate analytics or insights
-- be invoked from client-side code
+Any AI helper, if reintroduced, must still:
 
-Full detail: [`docs/ai-boundaries.md`](docs/ai-boundaries.md).
+- live server-side only,
+- never query the database directly,
+- never receive an unscoped employee record,
+- never access compensation,
+- never act as an HR advisor / chatbot,
+- never score, rank, or compare employees,
+- never be invoked from client-side code.
 
-Semantic definitions and operational meaning live in [`docs/operational-canon.md`](docs/operational-canon.md).
+Full historical boundary spec: [`docs/ai-boundaries.md`](docs/ai-boundaries.md).
 
 ---
 
@@ -294,18 +283,16 @@ Semantic definitions and operational meaning live in [`docs/operational-canon.md
 
 Build in this order. Do not parallelize past these steps.
 
-1. **Supabase setup** — apply schemas, create storage bucket, seed admin role
-2. **Auth + RBAC** — Supabase Auth sign-in, server-side role resolution, middleware guards
-3. **Employee CRUD** — create/read/update/soft-delete
-4. **Org chart** — whitelist-only employee-scope view
-5. **Document upload system** — upload, download, grouped export (ZIP/PDF)
-6. **Leave requests** — submit, approve, reject
-7. **Company updates** — admin-post, all-read feed
-8. **AI bio generation** — `generateBio`
-9. **Contract generation** — `generateContract`
-10. **Hardening + permissions** — audit-log coverage, RBAC end-to-end review, soft-delete sweeps
+1. **Supabase setup** — apply schemas, create storage bucket, seed admin role _(shipped)_
+2. **Auth + RBAC** — Supabase Auth sign-in, server-side role resolution, middleware guards _(shipped)_
+3. **Employee CRUD** — create/read/update/soft-delete _(shipped)_
+4. **Org chart** — whitelist-only employee-scope view _(shipped)_
+5. **Document upload system** — upload, download, grouped export (ZIP/PDF) _(not yet)_
+6. **Leave requests** — submit, approve, reject _(not yet)_
+7. **Instrumentation** — internal `analytics_events` table + server-only `track()` helper for the 8 activation events _(in progress — see `docs/14-day-sprint-tracker.md`)_
+8. **Hardening + permissions** — audit-log coverage, RBAC end-to-end review, soft-delete sweeps _(in progress — see `docs/14-day-sprint-tracker.md`)_
 
-Do **not** add V2 features before step 10 is complete.
+Do **not** add V2 features before step 8 is complete. Company announcements and AI helpers are parked until post-V1.
 
 ---
 
