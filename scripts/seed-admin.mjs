@@ -135,6 +135,16 @@ console.log("• Ensuring employees row exists…");
     }
     tenantId = insertedCompany.id;
     console.log(`✓ company created. Id: ${tenantId}`);
+
+    const { error: trackErr } = await supabase.from("analytics_events").insert({
+      tenant_id: tenantId,
+      user_id: user.id,
+      event_name: "company_created",
+      event_properties: { slug: companySlug, name: companyName },
+    });
+    if (trackErr && trackErr.code !== "23505") {
+      console.warn(`[track] company_created insert failed: ${trackErr.message}`);
+    }
   } else {
     console.log(`✓ company already exists. Id: ${tenantId}`);
   }

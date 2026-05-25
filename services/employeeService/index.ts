@@ -15,6 +15,7 @@ import "server-only";
 import { z } from "zod";
 import type { Actor } from "@/middleware/rbac";
 import { createServiceRoleClient } from "@/lib/db/supabaseServer";
+import { track } from "@/lib/telemetry/track";
 
 export const ORG_CHART_FIELDS = [
   "id",
@@ -350,6 +351,22 @@ export async function createEmployee(actor: Actor, input: unknown): Promise<Empl
   await inviteEmployeeAuthUser(created.email, tenantId);
 
   await writeAudit(actor, "employee.created", created.id);
+
+  // Fire activation event if this is the tenant's first employee.
+  // The 'first_*' partial unique index also guards against duplicates.
+  const { count } = await supabase
+    .from("employees")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", tenantId)
+    .is("deleted_at", null);
+  if (count === 1) {
+    await track({
+      tenantId,
+      userId: actor.authUserId,
+      eventName: "first_employee_added",
+      properties: { employee_id: created.id },
+    });
+  }
 
   return toEmployeeFullRecord(created);
 }
