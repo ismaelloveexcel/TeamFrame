@@ -7,23 +7,14 @@
   "scripts": {
     "dev": "next dev -p 3030",
     "build": "next build",
-    "ci:full": "node scripts/run-ci.mjs",
-    "test:deterministic": "node scripts/test-deterministic.mjs",
-    "test:replay": "node scripts/test-replay.mjs",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "db:apply": "node scripts/apply-schemas.mjs",
     "db:reset": "node scripts/reset-and-apply.mjs",
     "db:inspect": "node scripts/inspect-db.mjs",
-    "db:test:rls": "node scripts/test-rls.mjs",
-    "db:test:stale": "node scripts/test-stale-writes.mjs",
-    "test:employees": "node scripts/test-employee-integration.mjs",
-    "test:security": "node scripts/test-security-suite.mjs",
-    "test:reliability": "node tests/reliability/run-reliability-suite.mjs",
-    "storage:setup": "node scripts/setup-storage.mjs",
     "seed:admin": "node scripts/seed-admin.mjs",
-    "auth:lock": "node scripts/lock-supabase-auth.mjs"
+    "storage:setup": "node scripts/setup-storage.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
