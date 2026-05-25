@@ -91,6 +91,34 @@ export default async function DashboardPage() {
   const timeToActivation =
     t0 && t1 ? formatDuration(new Date(t1).getTime() - new Date(t0).getTime()) : null;
 
+  // Trust status — derived from already-fetched data, zero new queries
+  const allTimestamps = [...eventMap.values()].map((ts) => new Date(ts).getTime());
+  const latestEventAt =
+    allTimestamps.length > 0 ? new Date(Math.max(...allTimestamps)) : null;
+  const isEventFresh =
+    latestEventAt !== null &&
+    Date.now() - latestEventAt.getTime() < 24 * 60 * 60 * 1000;
+  const ACTIVATION_PREREQUISITES = [
+    "first_employee_added",
+    "first_onboarding_assigned",
+    "first_onboarding_completed",
+    "first_leave_requested",
+    "first_leave_approved",
+  ] as const;
+  const activationConsistencyOk =
+    !isActivated || ACTIVATION_PREREQUISITES.every((e) => firedEvents.has(e));
+
+  // Single deterministic invariant: activation_completed present, all prerequisites
+  // present, and exactly one activation_completed row exists for this tenant
+  const activationCompletedCount = (eventRows ?? []).filter(
+    (r: { event_name: string; created_at: string }) =>
+      r.event_name === "activation_completed",
+  ).length;
+  const systemConsistent =
+    isActivated &&
+    ACTIVATION_PREREQUISITES.every((e) => firedEvents.has(e)) &&
+    activationCompletedCount === 1;
+
   const isAdmin = actor.role === "admin";
 
   return (
@@ -309,6 +337,65 @@ export default async function DashboardPage() {
               <div className="rounded-xl border border-ink-200 bg-white/70 p-4">
                 <p className="text-[12px] text-ink-500">Pending leave requests</p>
                 <p className="mt-1.5 text-[22px] tracking-tight">{pendingLeaves.length}</p>
+              </div>
+            </div>
+          </section>
+
+          {/* ── System Trust Status ── */}
+          <section className="mt-6">
+            <p className="text-[12px] tracking-[0.14em] text-ink-500">System Trust Status</p>
+            <div className="mt-3 divide-y divide-ink-100 rounded-xl border border-ink-200 bg-white/70">
+              {/* Runtime Health — always ✔ at render time; auth + tenant are required to reach this point */}
+              {(
+                [
+                  { label: "Dashboard loaded", ok: true },
+                  { label: "Auth state resolved", ok: !!actor.authUserId },
+                  { label: "Tenant resolved", ok: !!actor.tenantId },
+                ] as { label: string; ok: boolean }[]
+              ).map(({ label, ok }) => (
+                <div key={label} className="flex items-center justify-between px-5 py-3">
+                  <span className="text-[14px] text-ink-700">{label}</span>
+                  <span
+                    className={`text-[14px] font-medium tabular-nums ${
+                      ok ? "text-ink-900" : "text-ink-300"
+                    }`}
+                  >
+                    {ok ? "✔" : "✖"}
+                  </span>
+                </div>
+              ))}
+              {/* Event Freshness */}
+              <div className="flex items-center justify-between px-5 py-3">
+                <span className="text-[14px] text-ink-700">Last event</span>
+                <span className="text-[14px] tabular-nums text-ink-500">
+                  {latestEventAt
+                    ? `${latestEventAt.toISOString().slice(0, 16).replace("T", " ")} · ${
+                        isEventFresh ? "Fresh" : "Stale"
+                      }`
+                    : "—"}
+                </span>
+              </div>
+              {/* Activation Consistency */}
+              <div className="flex items-center justify-between px-5 py-3">
+                <span className="text-[14px] text-ink-700">Activation consistency</span>
+                <span
+                  className={`text-[14px] font-medium tabular-nums ${
+                    activationConsistencyOk ? "text-ink-900" : "text-ink-700"
+                  }`}
+                >
+                  {activationConsistencyOk ? "✔" : "⚠ prerequisite missing"}
+                </span>
+              </div>
+              {/* System Invariant */}
+              <div className="flex items-center justify-between px-5 py-3">
+                <span className="text-[14px] text-ink-700">System consistent</span>
+                <span
+                  className={`text-[14px] font-medium tabular-nums ${
+                    systemConsistent ? "text-ink-900" : "text-ink-700"
+                  }`}
+                >
+                  {systemConsistent ? "✔" : "⚠ Inconsistency detected"}
+                </span>
               </div>
             </div>
           </section>
