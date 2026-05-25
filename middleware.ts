@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { CookieOptions } from "@supabase/ssr";
 import { createServerClient } from "@supabase/ssr";
 
-const PROTECTED_PREFIXES = ["/dashboard", "/employees", "/admin", "/org-chart"] as const;
+const PROTECTED_PREFIXES = ["/dashboard", "/employees", "/org-chart"] as const;
 
 function isProtectedPath(pathname: string): boolean {
   return PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
@@ -52,19 +52,9 @@ export async function middleware(request: NextRequest) {
     return redirectToAuth(request);
   }
 
-  if (pathname === "/admin" || pathname.startsWith("/admin/")) {
-    const role = (user.app_metadata as { role?: unknown } | null)?.role;
-    if (role !== "admin") {
-      const url = request.nextUrl.clone();
-      url.pathname = "/dashboard";
-      url.searchParams.set("error", "forbidden");
-      return NextResponse.redirect(url);
-    }
-  }
-
   return response;
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/employees/:path*", "/admin/:path*", "/org-chart/:path*"],
+  matcher: ["/dashboard/:path*", "/employees/:path*", "/org-chart/:path*"],
 };
