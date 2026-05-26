@@ -1,9 +1,29 @@
 import Link from "next/link";
 import { requireTenantActor } from "@/middleware/rbac";
 import { listOrgChart } from "@/services/employeeService";
+import { listAllOnboardingTasks } from "@/services/onboardingService";
+import { listPendingLeaves } from "@/services/leaveService";
 import { createServiceRoleClient } from "@/lib/db/supabaseServer";
 
 export const dynamic = "force-dynamic";
+
+const ACTIVATION_EVENTS = [
+  { event: "first_employee_added", label: "Employee created" },
+  { event: "first_onboarding_assigned", label: "Onboarding assigned" },
+  { event: "first_onboarding_completed", label: "Onboarding completed" },
+  { event: "first_leave_requested", label: "Leave requested" },
+  { event: "first_leave_approved", label: "Leave approved" },
+  { event: "activation_completed", label: "Activation complete" },
+] as const;
+
+function formatDuration(ms: number): string {
+  const hours = Math.floor(ms / (1000 * 60 * 60));
+  if (hours < 1) return "< 1 hour";
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  const remHours = hours % 24;
+  return remHours > 0 ? `${days}d ${remHours}h` : `${days}d`;
+}
 
 const SETUP_STEPS = [
   {
@@ -31,27 +51,75 @@ const SETUP_STEPS = [
 
 export default async function DashboardPage() {
   const actor = await requireTenantActor();
-  const employees = await listOrgChart(actor);
+
+  const [employees, onboardingTasks, pendingLeaves] = await Promise.all([
+    listOrgChart(actor),
+    actor.role === "admin" ? listAllOnboardingTasks(actor) : Promise.resolve([]),
+    actor.role === "admin" ? listPendingLeaves(actor) : Promise.resolve([]),
+  ]);
 
   const total = employees.length;
   const active = employees.filter((e) => e.status === "active").length;
   const onLeave = employees.filter((e) => e.status === "on_leave").length;
   const inactive = employees.filter((e) => e.status === "inactive").length;
 
-  // Read activation progress — uses existing analytics_events table, no new service needed
+  // Read all activation events with timestamps — no new service, direct table read
   const supabase = createServiceRoleClient();
   const { data: eventRows } = await supabase
     .from("analytics_events")
-    .select("event_name")
+    .select("event_name, created_at")
     .eq("tenant_id", actor.tenantId)
-    .in("event_name", [...SETUP_STEPS.map((s) => s.event), "activation_completed"]);
+    .in("event_name", ACTIVATION_EVENTS.map((e) => e.event));
 
-  const firedEvents = new Set((eventRows ?? []).map((r: { event_name: string }) => r.event_name));
+  const eventMap = new Map(
+    (eventRows ?? []).map((r: { event_name: string; created_at: string }) => [
+      r.event_name,
+      r.created_at,
+    ])
+  );
+
+  const firedEvents = new Set(eventMap.keys());
   const isActivated = firedEvents.has("activation_completed");
   const completedSteps = SETUP_STEPS.filter((s) => firedEvents.has(s.event)).length;
   // First-run: only the admin in the system and none of the setup steps completed yet
   const isFirstRun = total <= 1 && completedSteps === 0;
   const nextStep = SETUP_STEPS.find((s) => !firedEvents.has(s.event));
+
+  // Time to activation: delta from first_employee_added → activation_completed
+  const t0 = eventMap.get("first_employee_added");
+  const t1 = eventMap.get("activation_completed");
+  const timeToActivation =
+    t0 && t1 ? formatDuration(new Date(t1).getTime() - new Date(t0).getTime()) : null;
+
+  // Trust status — derived from already-fetched data, zero new queries
+  const allTimestamps = [...eventMap.values()].map((ts) => new Date(ts).getTime());
+  const latestEventAt =
+    allTimestamps.length > 0 ? new Date(Math.max(...allTimestamps)) : null;
+  const isEventFresh =
+    latestEventAt !== null &&
+    Date.now() - latestEventAt.getTime() < 24 * 60 * 60 * 1000;
+  const ACTIVATION_PREREQUISITES = [
+    "first_employee_added",
+    "first_onboarding_assigned",
+    "first_onboarding_completed",
+    "first_leave_requested",
+    "first_leave_approved",
+  ] as const;
+  const activationConsistencyOk =
+    !isActivated || ACTIVATION_PREREQUISITES.every((e) => firedEvents.has(e));
+
+  // Single deterministic invariant: activation_completed present, all prerequisites
+  // present, and exactly one activation_completed row exists for this tenant
+  const activationCompletedCount = (eventRows ?? []).filter(
+    (r: { event_name: string; created_at: string }) =>
+      r.event_name === "activation_completed",
+  ).length;
+  const systemConsistent =
+    isActivated &&
+    ACTIVATION_PREREQUISITES.every((e) => firedEvents.has(e)) &&
+    activationCompletedCount === 1;
+
+  const isAdmin = actor.role === "admin";
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-14">
@@ -221,23 +289,133 @@ export default async function DashboardPage() {
               <p className="mt-2 text-[24px] tracking-tight">{inactive}</p>
             </article>
           </section>
-
-          <nav className="mt-10 flex flex-wrap gap-4 text-[14px]">
-            <Link
-              href="/employees"
-              className="text-ink-700 underline decoration-ink-300 underline-offset-4 hover:decoration-ink-900"
-            >
-              Employees
-            </Link>
-            <Link
-              href="/org-chart"
-              className="text-ink-700 underline decoration-ink-300 underline-offset-4 hover:decoration-ink-900"
-            >
-              Org chart
-            </Link>
-          </nav>
         </>
       )}
+
+      {/* ── Activation View — admin only, always visible ── */}
+      {isAdmin && (
+        <>
+          <section className="mt-10">
+            <p className="text-[12px] tracking-[0.14em] text-ink-500">Activation Progress</p>
+            <div className="mt-3 divide-y divide-ink-100 rounded-xl border border-ink-200 bg-white/70">
+              {ACTIVATION_EVENTS.map(({ event, label }) => {
+                const done = firedEvents.has(event);
+                return (
+                  <div key={event} className="flex items-center justify-between px-5 py-3">
+                    <span className="text-[14px] text-ink-700">{label}</span>
+                    <span
+                      className={`text-[14px] font-medium tabular-nums ${
+                        done ? "text-ink-900" : "text-ink-300"
+                      }`}
+                    >
+                      {done ? "✔" : "✖"}
+                    </span>
+                  </div>
+                );
+              })}
+              <div className="flex items-center justify-between px-5 py-3">
+                <span className="text-[14px] text-ink-400">Time to activation</span>
+                <span className="text-[14px] tabular-nums text-ink-700">
+                  {timeToActivation ?? "—"}
+                </span>
+              </div>
+            </div>
+          </section>
+
+          {/* ── System Health Snapshot ── */}
+          <section className="mt-6">
+            <p className="text-[12px] tracking-[0.14em] text-ink-500">System Health</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-ink-200 bg-white/70 p-4">
+                <p className="text-[12px] text-ink-500">Total employees</p>
+                <p className="mt-1.5 text-[22px] tracking-tight">{total}</p>
+              </div>
+              <div className="rounded-xl border border-ink-200 bg-white/70 p-4">
+                <p className="text-[12px] text-ink-500">Onboarding tasks assigned</p>
+                <p className="mt-1.5 text-[22px] tracking-tight">{onboardingTasks.length}</p>
+              </div>
+              <div className="rounded-xl border border-ink-200 bg-white/70 p-4">
+                <p className="text-[12px] text-ink-500">Pending leave requests</p>
+                <p className="mt-1.5 text-[22px] tracking-tight">{pendingLeaves.length}</p>
+              </div>
+            </div>
+          </section>
+
+          {/* ── System Trust Status ── */}
+          <section className="mt-6">
+            <p className="text-[12px] tracking-[0.14em] text-ink-500">System Trust Status</p>
+            <div className="mt-3 divide-y divide-ink-100 rounded-xl border border-ink-200 bg-white/70">
+              {/* Runtime Health — always ✔ at render time; auth + tenant are required to reach this point */}
+              {(
+                [
+                  { label: "Dashboard loaded", ok: true },
+                  { label: "Auth state resolved", ok: !!actor.authUserId },
+                  { label: "Tenant resolved", ok: !!actor.tenantId },
+                ] as { label: string; ok: boolean }[]
+              ).map(({ label, ok }) => (
+                <div key={label} className="flex items-center justify-between px-5 py-3">
+                  <span className="text-[14px] text-ink-700">{label}</span>
+                  <span
+                    className={`text-[14px] font-medium tabular-nums ${
+                      ok ? "text-ink-900" : "text-ink-300"
+                    }`}
+                  >
+                    {ok ? "✔" : "✖"}
+                  </span>
+                </div>
+              ))}
+              {/* Event Freshness */}
+              <div className="flex items-center justify-between px-5 py-3">
+                <span className="text-[14px] text-ink-700">Last event</span>
+                <span className="text-[14px] tabular-nums text-ink-500">
+                  {latestEventAt
+                    ? `${latestEventAt.toISOString().slice(0, 16).replace("T", " ")} · ${
+                        isEventFresh ? "Fresh" : "Stale"
+                      }`
+                    : "—"}
+                </span>
+              </div>
+              {/* Activation Consistency */}
+              <div className="flex items-center justify-between px-5 py-3">
+                <span className="text-[14px] text-ink-700">Activation consistency</span>
+                <span
+                  className={`text-[14px] font-medium tabular-nums ${
+                    activationConsistencyOk ? "text-ink-900" : "text-ink-700"
+                  }`}
+                >
+                  {activationConsistencyOk ? "✔" : "⚠ prerequisite missing"}
+                </span>
+              </div>
+              {/* System Invariant */}
+              <div className="flex items-center justify-between px-5 py-3">
+                <span className="text-[14px] text-ink-700">System consistent</span>
+                <span
+                  className={`text-[14px] font-medium tabular-nums ${
+                    systemConsistent ? "text-ink-900" : "text-ink-700"
+                  }`}
+                >
+                  {systemConsistent ? "✔" : "⚠ Inconsistency detected"}
+                </span>
+              </div>
+            </div>
+          </section>
+        </>
+      )}
+
+      <nav className="mt-10 flex flex-wrap gap-4 text-[14px]">
+        <Link
+          href="/employees"
+          className="text-ink-700 underline decoration-ink-300 underline-offset-4 hover:decoration-ink-900"
+        >
+          Employees
+        </Link>
+        <Link
+          href="/org-chart"
+          className="text-ink-700 underline decoration-ink-300 underline-offset-4 hover:decoration-ink-900"
+        >
+          Org chart
+        </Link>
+      </nav>
     </main>
   );
 }
