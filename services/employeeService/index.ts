@@ -15,6 +15,7 @@ import "server-only";
 import { z } from "zod";
 import type { Actor } from "@/middleware/rbac";
 import { createServiceRoleClient } from "@/lib/db/supabaseServer";
+import { env } from "@/lib/db/env";
 import { track } from "@/lib/telemetry/track";
 
 export const ORG_CHART_FIELDS = [
@@ -212,7 +213,7 @@ async function inviteEmployeeAuthUser(email: string, tenantId: string): Promise<
       role: "employee",
       tenant_id: tenantId,
     },
-    redirectTo: `${process.env.SITE_URL}/auth/callback`,
+    redirectTo: `${env.siteUrl}/auth/callback`,
   });
 
   if (error) {
@@ -252,6 +253,54 @@ async function rowExistsForTenant(
   }
 
   return Boolean(data);
+}
+
+async function ensureEmployeeBelongsToTenant(
+  tenantId: string,
+  employeeId: string,
+): Promise<void> {
+  const supabase = createServiceRoleClient();
+  const { data, error } = await supabase
+    .from("employees")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("id", employeeId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`EMPLOYEE_LOOKUP_FAILED: ${error.message}`);
+  }
+  if (!data) {
+    throw new Error("INVALID_EMPLOYEE_ID");
+  }
+}
+
+async function validateManagerId(
+  tenantId: string,
+  managerId: string | null | undefined,
+  employeeId?: string,
+): Promise<void> {
+  if (!managerId) return;
+  if (employeeId && managerId === employeeId) {
+    throw new Error("INVALID_MANAGER_ID");
+  }
+
+  const supabase = createServiceRoleClient();
+  const { data, error } = await supabase
+    .from("employees")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("id", managerId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`EMPLOYEE_LOOKUP_FAILED: ${error.message}`);
+  }
+  if (!data) {
+    throw new Error("INVALID_MANAGER_ID");
+  }
 }
 
 async function writeAudit(
@@ -320,6 +369,7 @@ export async function createEmployee(actor: Actor, input: unknown): Promise<Empl
   requireAdmin(actor);
   const tenantId = requireTenant(actor);
   const parsed = CreateEmployeeSchema.parse(input);
+  await validateManagerId(tenantId, parsed.manager_id);
 
   const supabase = createServiceRoleClient();
   const { data, error } = await supabase
@@ -387,6 +437,7 @@ export async function updateEmployee(
   if (!expectedUpdatedAt) {
     throw new Error("MISSING_EXPECTED_UPDATED_AT");
   }
+  await validateManagerId(tenantId, parsed.manager_id, employeeId);
 
   const supabase = createServiceRoleClient();
   const { data, error } = await supabase

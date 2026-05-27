@@ -43,6 +43,23 @@ function requireAdmin(actor: Actor): void {
   if (actor.role !== "admin") throw new Error("FORBIDDEN");
 }
 
+async function ensureEmployeeBelongsToTenant(
+  tenantId: string,
+  employeeId: string,
+): Promise<void> {
+  const supabase = createServiceRoleClient();
+  const { data, error } = await supabase
+    .from("employees")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("id", employeeId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (error) throw new Error(`ONBOARDING_EMPLOYEE_LOOKUP_FAILED: ${error.message}`);
+  if (!data) throw new Error("INVALID_EMPLOYEE_ID");
+}
+
 async function writeAudit(actor: Actor, actionType: string, targetId?: string): Promise<void> {
   const tenantId = requireTenant(actor);
   const supabase = createServiceRoleClient();
@@ -116,6 +133,7 @@ export async function assignOnboardingTask(
 ): Promise<OnboardingTask> {
   requireAdmin(actor);
   const tenantId = requireTenant(actor);
+  await ensureEmployeeBelongsToTenant(tenantId, input.employeeId);
 
   const supabase = createServiceRoleClient();
   const { data, error } = await supabase

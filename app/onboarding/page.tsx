@@ -19,6 +19,7 @@ const ERROR_COPY: Record<string, string> = {
   FORBIDDEN: "You do not have permission for that action.",
   NO_TENANT_CONTEXT: "Session error — please sign out and back in.",
   NO_EMPLOYEE_RECORD: "Your account is not linked to an employee profile yet.",
+  INVALID_EMPLOYEE_ID: "That employee record is no longer available. Refresh and try again.",
   STALE_WRITE: "That record changed. Refresh and try again.",
   MISSING_EXPECTED_UPDATED_AT: "Missing concurrency marker. Refresh and retry.",
   INVALID_INPUT: "Check your input and try again.",
