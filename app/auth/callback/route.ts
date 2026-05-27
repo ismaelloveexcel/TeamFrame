@@ -28,13 +28,19 @@ function defaultNextForRole(role: "admin" | "employee"): string {
   return role === "employee" ? "/me" : "/dashboard";
 }
 
-function redirectTo(origin: string, path: string, request: NextRequest, clearAuthCookies = false) {
+type CookieWipe = "none" | "verifier" | "all";
+
+function redirectTo(origin: string, path: string, request: NextRequest, wipe: CookieWipe = "none") {
   const response = NextResponse.redirect(`${origin}${path}`);
-  if (clearAuthCookies) {
-    for (const cookie of request.cookies.getAll()) {
-      if (cookie.name.includes("code-verifier") || cookie.name.includes("auth-token")) {
-        response.cookies.delete(cookie.name);
-      }
+  if (wipe === "none") return response;
+  for (const cookie of request.cookies.getAll()) {
+    const name = cookie.name;
+    const isVerifier = name.includes("code-verifier");
+    const isAuthToken = name.includes("auth-token");
+    if (wipe === "verifier" && isVerifier) {
+      response.cookies.delete(name);
+    } else if (wipe === "all" && (isVerifier || isAuthToken)) {
+      response.cookies.delete(name);
     }
   }
   return response;
@@ -52,14 +58,14 @@ export async function GET(request: NextRequest) {
     if (process.env.NODE_ENV === "development") {
       console.warn(`[callback] supabase rejected the link: ${supabaseErr}`);
     }
-    return redirectTo(origin, "/auth?error=callback_failed", request, true);
+    return redirectTo(origin, "/auth?error=callback_failed", request, "all");
   }
 
   if (!code && !tokenHash) {
     if (process.env.NODE_ENV === "development") {
       console.warn("[callback] no code, token_hash, or error in URL");
     }
-    return redirectTo(origin, "/auth?error=callback_failed", request, true);
+    return redirectTo(origin, "/auth?error=callback_failed", request, "all");
   }
 
   if (process.env.NODE_ENV === "development") {
@@ -83,7 +89,7 @@ export async function GET(request: NextRequest) {
     if (process.env.NODE_ENV === "development") {
       console.warn(`[callback] session exchange failed: ${error.message}`);
     }
-    return redirectTo(origin, "/auth?error=callback_failed", request, true);
+    return redirectTo(origin, "/auth?error=callback_failed", request, "all");
   }
 
   const {
@@ -91,13 +97,13 @@ export async function GET(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return redirectTo(origin, "/auth?error=callback_failed", request, true);
+    return redirectTo(origin, "/auth?error=callback_failed", request, "all");
   }
 
   const identity = await resolveIdentity(user.id);
   if (!identity.employeeId && identity.role !== "admin") {
     await supabase.auth.signOut();
-    return redirectTo(origin, "/auth?error=not_authorized", request, true);
+    return redirectTo(origin, "/auth?error=not_authorized", request, "all");
   }
 
   await track({
@@ -107,5 +113,6 @@ export async function GET(request: NextRequest) {
     properties: { role: identity.role },
   });
 
-  return redirectTo(origin, next || defaultNextForRole(identity.role), request);
+  // Wipe leftover PKCE code-verifier cookies (NOT auth-token) after success.
+  return redirectTo(origin, next || defaultNextForRole(identity.role), request, "verifier");
 }

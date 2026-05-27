@@ -89,3 +89,31 @@ For production, replace the host with the production `SITE_URL`:
 
 Do not use password reset, invite-acceptance, OAuth, or MFA templates as product
 entry points in V1.
+
+## Auth regression checklist
+
+Run this after any change to `app/auth/**`, `middleware.ts`, the Supabase email
+template, or the `SITE_URL` / redirect-allowlist configuration. PKCE-class bugs
+tend to silently reappear during auth refactors.
+
+Manual round-trip — all must pass:
+
+- [ ] Newest magic link works (fresh email → click → land on role default)
+- [ ] Reused link fails gracefully (`/auth?error=callback_failed`, no crash)
+- [ ] Stale/expired link fails gracefully (same error page)
+- [ ] Gmail / webmail click works (no prefetch consumption of the code)
+- [ ] Cross-browser click works (link issued in browser A, opened in browser B)
+- [ ] No infinite redirect loop after successful login
+- [ ] Logout → login again works in the same browser session
+- [ ] Admin lands on `/dashboard`, employee lands on `/me`
+
+Diagnostic signature in dev logs after the `token_hash` switch — a successful
+login must look like:
+
+```text
+[callback] code=none token_hash=abc12345 cookies=[...] code_verifier_present=false
+```
+
+If you ever see `code=...` or `code challenge does not match previously saved
+code verifier` on a successful path, the email template has reverted to
+`{{ .ConfirmationURL }}` or some emails are still using the old template.
