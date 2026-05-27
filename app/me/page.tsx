@@ -206,17 +206,18 @@ export default async function MePage({
                     <div className="flex items-center gap-3">
                       <TaskStatusBadge status={task.status} />
                       {task.status === "pending" ? (
-                        <form action={completeOnboardingTaskAction}>
-                          <input type="hidden" name="task_id" value={task.id} />
-                          <input type="hidden" name="expected_updated_at" value={task.updated_at} />
-                          <button
-                            type="submit"
-                            className="rounded-full bg-ink-900 px-4 py-1.5 text-[13px] font-medium text-paper transition hover:bg-ink-700"
-                          >
-                            Mark complete
-                          </button>
-                        </form>
-                      ) : null}
+                          <form action={completeOnboardingTaskAction}>
+                            <input type="hidden" name="task_id" value={task.id} />
+                            <input type="hidden" name="expected_updated_at" value={task.updated_at} />
+                            <input type="hidden" name="return_to" value="/me" />
+                            <button
+                              type="submit"
+                              className="rounded-full bg-ink-900 px-4 py-1.5 text-[13px] font-medium text-paper transition hover:bg-ink-700"
+                            >
+                              Mark complete
+                            </button>
+                          </form>
+                        ) : null}
                     </div>
                   </li>
                 ))}
@@ -228,6 +229,7 @@ export default async function MePage({
             <h2 className="text-[19px] font-medium tracking-tight">Request leave</h2>
             <p className="mt-1 text-[14px] text-ink-500">Submit a request and track its status here.</p>
             <form action={submitLeaveAction} className="mt-4 flex flex-wrap items-end gap-3">
+                <input type="hidden" name="return_to" value="/me" />
               <div className="flex flex-col gap-1">
                 <label htmlFor="start_date" className="text-[12px] text-ink-500">
                   From

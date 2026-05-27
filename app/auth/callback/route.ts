@@ -17,11 +17,15 @@ import { resolveIdentity } from "@/lib/rbac/roles";
 import { track } from "@/lib/telemetry/track";
 
 function safeNext(raw: string | null): string {
-  if (!raw) return "/dashboard";
+  if (!raw) return "";
   if (!raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) {
-    return "/dashboard";
+    return "";
   }
   return raw;
+}
+
+function defaultNextForRole(role: "admin" | "employee"): string {
+  return role === "employee" ? "/me" : "/dashboard";
 }
 
 function redirectTo(origin: string, path: string, request: NextRequest, clearAuthCookies = false) {
@@ -103,5 +107,5 @@ export async function GET(request: NextRequest) {
     properties: { role: identity.role },
   });
 
-  return redirectTo(origin, next, request);
+  return redirectTo(origin, next || defaultNextForRole(identity.role), request);
 }

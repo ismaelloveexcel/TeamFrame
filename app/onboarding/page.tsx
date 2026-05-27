@@ -201,6 +201,7 @@ export default async function OnboardingPage({
   return (
     <main className="mx-auto max-w-3xl px-6 py-14">
       <nav className="mb-6 flex gap-4 text-[14px] text-ink-500">
+        <Link href="/me" className="hover:text-ink-900 transition">My space</Link>
         <Link href="/dashboard" className="hover:text-ink-900 transition">Dashboard</Link>
         <span className="text-ink-900 font-medium">Onboarding</span>
         <Link href="/leaves" className="hover:text-ink-900 transition">Leaves</Link>

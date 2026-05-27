@@ -1,9 +1,9 @@
 import { requireTenantActor } from "@/middleware/rbac";
 import {
   listLeavesForEmployee,
-  listPendingLeaves,
   type LeaveRecord,
 } from "@/services/leaveService";
+import { listPendingLeavesWithEmployee, type PendingLeaveWithEmployee } from "@/services/leaveService";
 import Link from "next/link";
 import { submitLeaveAction, decideLeaveAction } from "./actions";
 
@@ -61,7 +61,7 @@ export default async function LeavesPage({
   const errorMessage = error ? (ERROR_COPY[error] ?? ERROR_COPY.UNKNOWN) : null;
 
   if (actor.role === "admin") {
-    const pending = await listPendingLeaves(actor);
+    const pending: PendingLeaveWithEmployee[] = await listPendingLeavesWithEmployee(actor);
 
     return (
       <main className="mx-auto max-w-5xl px-6 py-14">
@@ -114,8 +114,8 @@ export default async function LeavesPage({
               {pending.map((leave) => (
                 <li key={leave.id} className="flex flex-wrap items-center gap-4 px-5 py-4">
                   <div className="min-w-0 flex-1 space-y-0.5">
-                    <p className="text-[13px] text-ink-500 font-mono">
-                      {leave.employee_id}
+                    <p className="text-[13px] text-ink-900 font-medium">
+                      {leave.employee_full_name} <span className="text-[12px] text-ink-500 font-normal">({leave.employee_role_title})</span>
                     </p>
                     <p className="text-[15px] text-ink-900">
                       {formatDate(leave.start_date)} → {formatDate(leave.end_date)}
@@ -173,6 +173,9 @@ export default async function LeavesPage({
   return (
     <main className="mx-auto max-w-3xl px-6 py-14">
       <nav className="mb-6 flex gap-4 text-[14px] text-ink-500">
+        <Link href="/me" className="hover:text-ink-900 transition">
+          My space
+        </Link>
         <Link href="/dashboard" className="hover:text-ink-900 transition">
           Dashboard
         </Link>
