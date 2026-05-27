@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- Added docs/launch/ folder: consolidated audit findings (M1–M20), hardening execution plan, accepted risks register (DR-01–DR-06), audit reports archive, operational runbook skeletons, verification checklists, and operational readiness checklist.
+
 ## v1.0.0 - 2026-05-22
 
 ### Added

@@ -127,3 +127,9 @@ Success metric: first repeatable conversion pipeline.
 - All 8 instrumentation events firing
 - Pricing page live; outbound running; ≥3 trials; ≥1 paid conversion in motion
 - Repo on `main` reflects only what is real and shippable
+
+---
+
+### Pre-Launch Hardening Sprint
+
+See `docs/launch/` for the consolidated hardening sprint artifacts, audit archive, accepted risks register, and verification checklists. The hardening sprint supersedes the 14-day tracker for remaining pre-launch work.
