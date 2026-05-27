@@ -16,6 +16,7 @@ import { z } from "zod";
 import type { Actor } from "@/middleware/rbac";
 import { createServiceRoleClient } from "@/lib/db/supabaseServer";
 import { track } from "@/lib/telemetry/track";
+import { maybeFireActivationCompleted } from "@/services/onboardingService";
 
 export const ORG_CHART_FIELDS = [
   "id",
@@ -366,6 +367,7 @@ export async function createEmployee(actor: Actor, input: unknown): Promise<Empl
       eventName: "first_employee_added",
       properties: { employee_id: created.id },
     });
+    await maybeFireActivationCompleted(tenantId, actor.authUserId);
   }
 
   return toEmployeeFullRecord(created);

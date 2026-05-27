@@ -11,6 +11,7 @@ import "server-only";
 import type { Actor } from "@/middleware/rbac";
 import { createServiceRoleClient } from "@/lib/db/supabaseServer";
 import { track } from "@/lib/telemetry/track";
+import { maybeFireActivationCompleted } from "@/services/onboardingService";
 
 export type LeaveStatus = "pending" | "approved" | "rejected";
 
@@ -77,14 +78,19 @@ export async function listLeavesForEmployee(
   return ((data ?? []) as LeaveRow[]).map(({ tenant_id: _tenantId, ...row }) => row);
 }
 
-export async function listPendingLeaves(actor: Actor): Promise<LeaveRecord[]> {
+export type PendingLeaveWithEmployee = LeaveRecord & {
+  employee_full_name: string;
+  employee_role_title: string;
+};
+
+export async function listPendingLeavesWithEmployee(actor: Actor): Promise<PendingLeaveWithEmployee[]> {
   requireAdmin(actor);
   const tenantId = requireTenant(actor);
 
   const supabase = createServiceRoleClient();
   const { data, error } = await supabase
     .from("leaves")
-    .select("id, tenant_id, employee_id, start_date, end_date, status, created_at, updated_at")
+    .select("id, tenant_id, employee_id, start_date, end_date, status, created_at, updated_at, employees(full_name, role_title)")
     .eq("tenant_id", tenantId)
     .eq("status", "pending")
     .order("created_at", { ascending: true });
@@ -93,7 +99,17 @@ export async function listPendingLeaves(actor: Actor): Promise<LeaveRecord[]> {
     throw new Error(`LEAVE_LIST_PENDING_FAILED: ${error.message}`);
   }
 
-  return ((data ?? []) as LeaveRow[]).map(({ tenant_id: _tenantId, ...row }) => row);
+  return ((data ?? []) as any[]).map((row) => ({
+    id: row.id,
+    employee_id: row.employee_id,
+    start_date: row.start_date,
+    end_date: row.end_date,
+    status: row.status,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    employee_full_name: row.employees?.full_name ?? "(unknown)",
+    employee_role_title: row.employees?.role_title ?? "(unknown)",
+  }));
 }
 
 export async function submitLeaveRequest(
@@ -174,6 +190,7 @@ export async function decideLeaveRequest(
       .eq("status", "approved");
     if ((countResult.count ?? 0) === 1) {
       await track({ tenantId, userId: actor.authUserId, eventName: "first_leave_approved", properties: { leave_id: leaveId } });
+      await maybeFireActivationCompleted(tenantId, actor.authUserId);
     }
   }
 
