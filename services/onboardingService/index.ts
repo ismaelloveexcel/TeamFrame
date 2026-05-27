@@ -54,7 +54,7 @@ async function writeAudit(actor: Actor, actionType: string, targetId?: string): 
   } as never);
 }
 
-async function maybeFireActivationCompleted(tenantId: string, userId: string): Promise<void> {
+export async function maybeFireActivationCompleted(tenantId: string, userId: string): Promise<void> {
   const supabase = createServiceRoleClient();
   const { data } = await supabase
     .from("analytics_events")
