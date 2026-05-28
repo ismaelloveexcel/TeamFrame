@@ -317,7 +317,7 @@ export default async function DashboardPage({
       const leaveOwnerName = leaveMeta ? (employeeMap.get(leaveMeta.employee_id) ?? "Team member") : null;
       const onboardingOwnerName = onboardingMeta ? (employeeMap.get(onboardingMeta.employee_id) ?? "Team member") : null;
 
-      let metadata = "Operational update";
+      let metadata = row.action_type === "employee.archived" ? "Employee record archived" : "Operational update";
       if (leaveMeta) {
         metadata = `${leaveOwnerName} · ${formatDate(leaveMeta.start_date)} to ${formatDate(leaveMeta.end_date)}`;
       } else if (onboardingMeta) {
