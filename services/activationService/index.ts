@@ -18,7 +18,28 @@ export type ActivationEventRow = {
 export type AuditActivityRow = {
   action_type: string;
   target_id: string | null;
+  actor_user_id: string;
   timestamp: string;
+};
+
+export type TimelineEmployeeActor = {
+  id: string;
+  auth_user_id: string | null;
+  full_name: string;
+};
+
+export type TimelineLeaveMeta = {
+  id: string;
+  employee_id: string;
+  start_date: string;
+  end_date: string;
+  status: "pending" | "approved" | "rejected";
+};
+
+export type TimelineOnboardingMeta = {
+  id: string;
+  employee_id: string;
+  title: string;
 };
 
 function requireTenant(actor: Actor): string {
@@ -56,7 +77,7 @@ export async function listRecentAuditActivity(
 
   const { data, error } = await supabase
     .from("audit_logs")
-    .select("action_type, target_id, timestamp")
+    .select("action_type, target_id, actor_user_id, timestamp")
     .eq("tenant_id", tenantId)
     .in("action_type", actionTypes as unknown as string[])
     .order("timestamp", { ascending: false })
@@ -67,4 +88,60 @@ export async function listRecentAuditActivity(
   }
 
   return (data ?? []) as AuditActivityRow[];
+}
+
+export async function listTimelineEmployeeActors(actor: Actor): Promise<TimelineEmployeeActor[]> {
+  const tenantId = requireTenant(actor);
+  const supabase = createServiceRoleClient();
+
+  const { data, error } = await supabase
+    .from("employees")
+    .select("id, auth_user_id, full_name")
+    .eq("tenant_id", tenantId)
+    .is("deleted_at", null);
+
+  if (error) {
+    throw new Error(`AUDIT_TIMELINE_EMPLOYEE_ACTORS_FAILED: ${error.message}`);
+  }
+
+  return (data ?? []) as TimelineEmployeeActor[];
+}
+
+export async function listTimelineLeavesByIds(actor: Actor, leaveIds: readonly string[]): Promise<TimelineLeaveMeta[]> {
+  const tenantId = requireTenant(actor);
+  if (leaveIds.length === 0) return [];
+
+  const supabase = createServiceRoleClient();
+  const { data, error } = await supabase
+    .from("leaves")
+    .select("id, employee_id, start_date, end_date, status")
+    .eq("tenant_id", tenantId)
+    .in("id", leaveIds as string[]);
+
+  if (error) {
+    throw new Error(`AUDIT_TIMELINE_LEAVES_FAILED: ${error.message}`);
+  }
+
+  return (data ?? []) as TimelineLeaveMeta[];
+}
+
+export async function listTimelineOnboardingByIds(
+  actor: Actor,
+  taskIds: readonly string[],
+): Promise<TimelineOnboardingMeta[]> {
+  const tenantId = requireTenant(actor);
+  if (taskIds.length === 0) return [];
+
+  const supabase = createServiceRoleClient();
+  const { data, error } = await supabase
+    .from("onboarding_tasks")
+    .select("id, employee_id, title")
+    .eq("tenant_id", tenantId)
+    .in("id", taskIds as string[]);
+
+  if (error) {
+    throw new Error(`AUDIT_TIMELINE_ONBOARDING_FAILED: ${error.message}`);
+  }
+
+  return (data ?? []) as TimelineOnboardingMeta[];
 }

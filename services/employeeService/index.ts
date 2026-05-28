@@ -661,6 +661,9 @@ export async function createEmployee(actor: Actor, input: unknown): Promise<Empl
   });
 
   await writeAudit(actor, "employee.created", created.id, true);
+  if (inviteResult.status === "linked" || inviteResult.status === "invited") {
+    await writeAudit(actor, "employee.invite_sent", created.id, true);
+  }
 
   if (inviteResult.status === "conflict") {
     throw new Error("EMPLOYEE_INVITE_TENANT_CONFLICT");

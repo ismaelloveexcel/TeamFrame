@@ -2,7 +2,13 @@ import Link from "next/link";
 import { requireTenantActor } from "@/middleware/rbac";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { listEmployeesForAdmin, listOrgChart } from "@/services/employeeService";
-import { listActivationEvents, listRecentAuditActivity } from "@/services/activationService";
+import {
+  listActivationEvents,
+  listRecentAuditActivity,
+  listTimelineEmployeeActors,
+  listTimelineLeavesByIds,
+  listTimelineOnboardingByIds,
+} from "@/services/activationService";
 import { listPendingLeavesWithEmployee } from "@/services/leaveService";
 import { listAllOnboardingTasks } from "@/services/onboardingService";
 import { logoutAction } from "@/app/auth/actions";
@@ -22,16 +28,40 @@ const ACTIVATION_EVENTS = [
 
 const ACTIVITY_ACTIONS = [
   "employee.created",
+  "employee.invite_sent",
   "employee.reinvited",
+  "employee.archived",
+  "onboarding.assigned",
   "onboarding.completed",
+  "leave.submitted",
   "leave.approved",
   "leave.rejected",
 ] as const;
+
+type TimelineTone = "info" | "warning" | "success";
+
+type TimelineItem = {
+  id: string;
+  timestamp: string;
+  title: string;
+  metadata: string;
+  actor: string;
+  tone: TimelineTone;
+};
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-GB", {
     day: "numeric",
     month: "short",
+  });
+}
+
+function formatTimelineTimestamp(iso: string): string {
+  return new Date(iso).toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -44,15 +74,40 @@ function timeAgo(iso: string): string {
   return `updated ${diffDays}d ago`;
 }
 
-function activityLabel(actionType: string, subjectName: string | null): string {
+function resolveDayBucket(iso: string): "Today" | "Yesterday" | "Earlier" {
+  const now = new Date();
+  const target = new Date(iso);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const targetDay = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+
+  if (targetDay.getTime() === today.getTime()) return "Today";
+  if (targetDay.getTime() === yesterday.getTime()) return "Yesterday";
+  return "Earlier";
+}
+
+function activityTitle(actionType: string, subjectName: string | null): string {
   if (actionType === "employee.created") {
-    return subjectName ? `Invite created for ${subjectName}` : "Invite created for a team member";
+    return subjectName ? `Employee profile created for ${subjectName}` : "Employee profile created";
+  }
+  if (actionType === "employee.invite_sent") {
+    return subjectName ? `Invite sent to ${subjectName}` : "Invite sent";
   }
   if (actionType === "employee.reinvited") {
     return subjectName ? `Invite re-sent to ${subjectName}` : "Invite re-sent";
   }
+  if (actionType === "employee.archived") {
+    return subjectName ? `${subjectName} archived` : "Employee archived";
+  }
+  if (actionType === "onboarding.assigned") {
+    return subjectName ? `Onboarding task assigned to ${subjectName}` : "Onboarding task assigned";
+  }
   if (actionType === "onboarding.completed") {
     return subjectName ? `Onboarding task completed by ${subjectName}` : "Onboarding task completed";
+  }
+  if (actionType === "leave.submitted") {
+    return subjectName ? `Leave submitted by ${subjectName}` : "Leave submitted";
   }
   if (actionType === "leave.approved") {
     return "Leave request approved";
@@ -64,8 +119,14 @@ function activityLabel(actionType: string, subjectName: string | null): string {
 }
 
 function activityTone(actionType: string): "info" | "warning" | "success" {
-  if (actionType === "leave.rejected") return "warning";
-  if (actionType === "leave.approved" || actionType === "onboarding.completed") return "success";
+  if (actionType === "leave.rejected" || actionType === "employee.archived") return "warning";
+  if (
+    actionType === "leave.approved" ||
+    actionType === "onboarding.completed" ||
+    actionType === "employee.invite_sent"
+  ) {
+    return "success";
+  }
   return "info";
 }
 
@@ -170,7 +231,7 @@ export default async function DashboardPage({
     isAdmin ? listActivationEvents(actor, ACTIVATION_EVENTS.map((e) => e.event)) : Promise.resolve([]),
   ]);
 
-  const recentAuditRows = isAdmin ? await listRecentAuditActivity(actor, ACTIVITY_ACTIONS, 12) : [];
+  const recentAuditRows = isAdmin ? await listRecentAuditActivity(actor, ACTIVITY_ACTIONS, 16) : [];
 
   const employees = isAdmin
     ? adminEmployees.map((employee) => ({
@@ -204,6 +265,27 @@ export default async function DashboardPage({
     .slice(0, 3);
   const onboardingAttentionItems = onboardingTasks.filter((task) => task.status === "pending").slice(0, 3);
   const employeeMap = new Map(adminEmployees.map((employee) => [employee.id, employee.full_name]));
+  const leaveTargetIds = recentAuditRows
+    .filter((row) => row.action_type.startsWith("leave.") && row.target_id)
+    .map((row) => row.target_id as string);
+  const onboardingTargetIds = recentAuditRows
+    .filter((row) => row.action_type.startsWith("onboarding.") && row.target_id)
+    .map((row) => row.target_id as string);
+  const [employeeActors, timelineLeaves, timelineOnboarding] = isAdmin
+    ? await Promise.all([
+        listTimelineEmployeeActors(actor),
+        listTimelineLeavesByIds(actor, leaveTargetIds),
+        listTimelineOnboardingByIds(actor, onboardingTargetIds),
+      ])
+    : [[], [], []];
+
+  const actorNameByAuthUserId = new Map(
+    employeeActors
+      .filter((employee) => Boolean(employee.auth_user_id))
+      .map((employee) => [employee.auth_user_id as string, employee.full_name]),
+  );
+  const leaveById = new Map(timelineLeaves.map((leave) => [leave.id, leave]));
+  const onboardingById = new Map(timelineOnboarding.map((task) => [task.id, task]));
   const latestQueueUpdate = [
     ...pendingInviteEmployees.map((employee) => employee.updated_at),
     ...pendingLeaves.map((leave) => leave.updated_at),
@@ -217,21 +299,51 @@ export default async function DashboardPage({
     .map((employee) => ({
       id: `activation-${employee.id}`,
       timestamp: employee.updated_at,
-      label: `${employee.full_name} activated their account`,
+      title: `${employee.full_name} activated their account`,
+      metadata: "Account activation completed",
+      actor: employee.full_name,
       tone: "success" as const,
     }));
 
-  const activityItems = [
-    ...recentAuditRows.map((row) => ({
-      id: `audit-${row.timestamp}-${row.target_id ?? "none"}-${row.action_type}`,
-      timestamp: row.timestamp,
-      label: activityLabel(row.action_type, row.target_id ? (employeeMap.get(row.target_id) ?? null) : null),
-      tone: activityTone(row.action_type),
-    })),
+  const activityItems: TimelineItem[] = [
+    ...recentAuditRows.map((row) => {
+      const actorLabel = row.actor_user_id === actor.authUserId
+        ? "You"
+        : (actorNameByAuthUserId.get(row.actor_user_id) ?? "Team member");
+
+      const targetEmployeeName = row.target_id ? (employeeMap.get(row.target_id) ?? null) : null;
+      const leaveMeta = row.target_id ? leaveById.get(row.target_id) : undefined;
+      const onboardingMeta = row.target_id ? onboardingById.get(row.target_id) : undefined;
+      const leaveOwnerName = leaveMeta ? (employeeMap.get(leaveMeta.employee_id) ?? "Team member") : null;
+      const onboardingOwnerName = onboardingMeta ? (employeeMap.get(onboardingMeta.employee_id) ?? "Team member") : null;
+
+      let metadata = "Operational update";
+      if (leaveMeta) {
+        metadata = `${leaveOwnerName} · ${formatDate(leaveMeta.start_date)} to ${formatDate(leaveMeta.end_date)}`;
+      } else if (onboardingMeta) {
+        metadata = `${onboardingMeta.title} · ${onboardingOwnerName}`;
+      } else if (targetEmployeeName) {
+        metadata = targetEmployeeName;
+      }
+
+      return {
+        id: `audit-${row.timestamp}-${row.target_id ?? "none"}-${row.action_type}`,
+        timestamp: row.timestamp,
+        title: activityTitle(row.action_type, leaveOwnerName ?? onboardingOwnerName ?? targetEmployeeName),
+        metadata,
+        actor: actorLabel,
+        tone: activityTone(row.action_type),
+      };
+    }),
     ...activationRows,
   ]
     .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime())
-    .slice(0, 8);
+    .slice(0, 12);
+
+  const groupedActivity = ["Today", "Yesterday", "Earlier"].map((label) => ({
+    label,
+    items: activityItems.filter((item) => resolveDayBucket(item.timestamp) === label),
+  }));
 
   const eventMap = new Map(
     eventRows.map((r) => [r.event_name, r.created_at]),
@@ -686,8 +798,8 @@ export default async function DashboardPage({
               <div className="flex flex-wrap items-end justify-between gap-3 border-b border-ink-300/60 pb-4">
                 <div>
                   <p className="text-[12px] tracking-[0.14em] text-ink-500">Visibility</p>
-                  <h2 className="text-[19px] font-medium tracking-tight">Recent activity</h2>
-                  <p className="mt-1 text-[14px] text-ink-500">Latest invites, onboarding completions, leave decisions, and account activations.</p>
+                  <h2 className="text-[19px] font-medium tracking-tight">Operational timeline</h2>
+                  <p className="mt-1 text-[14px] text-ink-500">Employee lifecycle events with who acted and when it happened.</p>
                 </div>
                 <span className="text-[12px] text-ink-500">Showing {activityItems.length} most recent items</span>
               </div>
@@ -697,23 +809,43 @@ export default async function DashboardPage({
                   No activity yet. Events will appear here as your team starts working.
                 </p>
               ) : (
-                <ul className="mt-4 space-y-2">
-                  {activityItems.map((item) => (
-                    <li
-                      key={item.id}
-                      className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-ink-200 bg-ink-50/60 px-3 py-2.5"
-                    >
-                      <div className="flex items-center gap-2">
-                        <QueueChip
-                          label={item.tone === "warning" ? "Attention" : item.tone === "success" ? "Done" : "Update"}
-                          tone={item.tone === "warning" ? "warning" : item.tone === "success" ? "success" : "info"}
-                        />
-                        <p className="text-[13px] text-ink-900">{item.label}</p>
-                      </div>
-                      <p className="text-[12px] text-ink-500">{timeAgo(item.timestamp)}</p>
-                    </li>
+                <div className="mt-4 space-y-5">
+                  {groupedActivity.map((group) => (
+                    <div key={group.label} className="space-y-2">
+                      <p className="text-[12px] font-medium uppercase tracking-[0.12em] text-ink-500">{group.label}</p>
+                      {group.items.length === 0 ? (
+                        <p className="rounded-md border border-ink-200 bg-ink-50/40 px-3 py-2 text-[12px] text-ink-500">
+                          No events.
+                        </p>
+                      ) : (
+                        <ul className="space-y-2">
+                          {group.items.map((item) => (
+                            <li
+                              key={item.id}
+                              className="rounded-md border border-ink-200 bg-ink-50/60 px-3 py-2.5"
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div className="space-y-1">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <QueueChip
+                                      label={item.tone === "warning" ? "Attention" : item.tone === "success" ? "Done" : "Update"}
+                                      tone={item.tone === "warning" ? "warning" : item.tone === "success" ? "success" : "info"}
+                                    />
+                                    <p className="text-[13px] font-medium text-ink-900">{item.title}</p>
+                                  </div>
+                                  <p className="text-[12px] text-ink-500">
+                                    {item.metadata} · by {item.actor}
+                                  </p>
+                                </div>
+                                <p className="text-[12px] text-ink-500">{formatTimelineTimestamp(item.timestamp)}</p>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                   ))}
-                </ul>
+                </div>
               )}
             </section>
           ) : null}
