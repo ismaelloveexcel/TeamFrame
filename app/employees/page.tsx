@@ -124,6 +124,8 @@ export default async function EmployeesPage({
       <nav className="mb-6 flex gap-4 text-[14px] text-ink-500">
         <span className="text-ink-900 font-medium">Employees</span>
         <Link href="/org-chart" className="hover:text-ink-900 transition">Org chart</Link>
+        <Link href="/onboarding" className="hover:text-ink-900 transition">Onboarding</Link>
+        <Link href="/leaves" className="hover:text-ink-900 transition">Leaves</Link>
       </nav>
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-ink-300/60 pb-5">
         <div className="space-y-2">
@@ -273,7 +275,7 @@ export default async function EmployeesPage({
                 </select>
                 <button
                   type="submit"
-                  className="rounded-md border border-ink-300 px-3 py-2 text-[14px]"
+                  className="rounded-md bg-ink-900 px-3 py-2 text-[14px] font-medium text-paper transition hover:bg-ink-700"
                 >
                   Save
                 </button>
@@ -286,7 +288,7 @@ export default async function EmployeesPage({
                     <input type="hidden" name="employee_id" value={employee.id} />
                     <button
                       type="submit"
-                      className="text-[13px] text-ink-700 underline decoration-ink-300 underline-offset-4"
+                      className="rounded-full border border-ink-300 px-3 py-1 text-[12px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900"
                     >
                       Re-send invite
                     </button>
@@ -297,7 +299,7 @@ export default async function EmployeesPage({
                   <input type="hidden" name="expected_updated_at" value={employee.updated_at} />
                   <button
                     type="submit"
-                    className="text-[13px] text-ink-700 underline decoration-ink-300 underline-offset-4"
+                    className="rounded-full border border-ink-300 px-3 py-1 text-[12px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900"
                   >
                     Archive employee
                   </button>

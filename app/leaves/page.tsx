@@ -80,8 +80,28 @@ export default async function LeavesPage({
           <div className="space-y-2">
             <p className="text-[12px] tracking-[0.14em] text-ink-500">Admin queue</p>
             <h1 className="text-[34px] leading-tight tracking-tight">Leave requests</h1>
+            <p className="text-[14px] text-ink-500">Review incoming requests and keep approvals moving.</p>
           </div>
         </div>
+
+        <section className="mt-7 grid gap-4 sm:grid-cols-3">
+          <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
+            <p className="text-[12px] text-ink-500">Needs decision</p>
+            <p className="mt-2 text-[24px] tracking-tight">{pending.length}</p>
+          </article>
+          <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
+            <p className="text-[12px] text-ink-500">Oldest request age</p>
+            <p className="mt-2 text-[24px] tracking-tight">
+              {pending[0] ? `${Math.max(1, Math.ceil((Date.now() - new Date(pending[0].created_at).getTime()) / (1000 * 60 * 60 * 24)))}d` : "0d"}
+            </p>
+          </article>
+          <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
+            <p className="text-[12px] text-ink-500">Queue status</p>
+            <p className="mt-2 text-[16px] tracking-tight text-ink-900">
+              {pending.length > 0 ? "Action needed" : "All clear"}
+            </p>
+          </article>
+        </section>
 
         {successMessage ? (
           <p className="mt-7 rounded-lg border border-accent/70 bg-white/80 px-4 py-3 text-[14px] text-accent">
@@ -124,6 +144,11 @@ export default async function LeavesPage({
                     <p className="text-[12px] text-ink-500">
                       Submitted {formatDate(leave.created_at)}
                     </p>
+                    <p className="mt-1">
+                      <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                        Needs decision
+                      </span>
+                    </p>
                   </div>
                   <div className="flex gap-2">
                     <form action={decideLeaveAction}>
@@ -138,7 +163,7 @@ export default async function LeavesPage({
                         type="submit"
                         className="rounded-full bg-ink-900 px-4 py-1.5 text-[13px] font-medium text-paper transition hover:bg-ink-700"
                       >
-                        Approve
+                        Approve request
                       </button>
                     </form>
                     <form action={decideLeaveAction}>
@@ -153,7 +178,7 @@ export default async function LeavesPage({
                         type="submit"
                         className="rounded-full border border-ink-300 px-4 py-1.5 text-[13px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900"
                       >
-                        Reject
+                        Reject request
                       </button>
                     </form>
                   </div>
@@ -190,6 +215,7 @@ export default async function LeavesPage({
         <div className="space-y-2">
           <p className="text-[12px] tracking-[0.14em] text-ink-500">Self-service</p>
           <h1 className="text-[34px] leading-tight tracking-tight">My leave</h1>
+          <p className="text-[14px] text-ink-500">Submit time off and track decisions in one place.</p>
         </div>
       </div>
 
@@ -276,7 +302,10 @@ export default async function LeavesPage({
           </ul>
         </section>
       ) : actor.employeeId ? (
-        <p className="mt-6 text-[14px] text-ink-500">No leave requests yet.</p>
+        <section className="mt-6 rounded-xl border border-dashed border-ink-300/80 bg-white/60 p-6 text-center">
+          <p className="text-[15px] text-ink-700">No leave requests yet.</p>
+          <p className="mt-2 text-[14px] text-ink-500">When you submit a request, status updates will appear here.</p>
+        </section>
       ) : null}
     </main>
   );

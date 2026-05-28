@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { requireTenantActor } from "@/middleware/rbac";
-import { listOrgChart } from "@/services/employeeService";
+import { listEmployeesForAdmin, listOrgChart } from "@/services/employeeService";
 import { listActivationEvents } from "@/services/activationService";
+import { listPendingLeavesWithEmployee } from "@/services/leaveService";
+import { listAllOnboardingTasks } from "@/services/onboardingService";
 import { logoutAction } from "@/app/auth/actions";
 
 export const dynamic = "force-dynamic";
@@ -43,12 +45,23 @@ export default async function DashboardPage() {
   const actor = await requireTenantActor();
   const isAdmin = actor.role === "admin";
 
-  const employees = await listOrgChart(actor);
+  const [employees, adminEmployees, pendingLeaves, onboardingTasks] = await Promise.all([
+    listOrgChart(actor),
+    isAdmin ? listEmployeesForAdmin(actor) : Promise.resolve([]),
+    isAdmin ? listPendingLeavesWithEmployee(actor) : Promise.resolve([]),
+    isAdmin ? listAllOnboardingTasks(actor) : Promise.resolve([]),
+  ]);
 
   const total = employees.length;
   const active = employees.filter((e) => e.status === "active").length;
   const onLeave = employees.filter((e) => e.status === "on_leave").length;
   const inactive = employees.filter((e) => e.status === "inactive").length;
+
+  const pendingInvites = adminEmployees.filter(
+    (e) => e.status !== "inactive" && e.setup_status === "incomplete",
+  ).length;
+  const pendingLeaveCount = pendingLeaves.length;
+  const onboardingNeedsAttention = onboardingTasks.filter((task) => task.status === "pending").length;
 
   // Read all activation events with timestamps through the service layer
   const eventRows = await listActivationEvents(
@@ -240,6 +253,52 @@ export default async function DashboardPage() {
               <p className="mt-2 text-[24px] tracking-tight">{inactive}</p>
             </article>
           </section>
+
+          {isAdmin ? (
+            <section className="mt-6 rounded-xl border border-ink-300/70 bg-white/80 p-5">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h2 className="text-[19px] font-medium tracking-tight">Operations at a glance</h2>
+                  <p className="mt-1 text-[14px] text-ink-500">Prioritize the queues that unblock your team fastest.</p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                <article className="rounded-lg border border-ink-300/70 bg-white p-4">
+                  <p className="text-[12px] text-ink-500">Pending invites</p>
+                  <p className="mt-2 text-[24px] tracking-tight">{pendingInvites}</p>
+                  <Link
+                    href="/employees"
+                    className="mt-2 inline-flex rounded-full bg-ink-900 px-3 py-1 text-[12px] font-medium text-paper transition hover:bg-ink-700"
+                  >
+                    Review invites
+                  </Link>
+                </article>
+
+                <article className="rounded-lg border border-ink-300/70 bg-white p-4">
+                  <p className="text-[12px] text-ink-500">Pending leave requests</p>
+                  <p className="mt-2 text-[24px] tracking-tight">{pendingLeaveCount}</p>
+                  <Link
+                    href="/leaves"
+                    className="mt-2 inline-flex rounded-full bg-ink-900 px-3 py-1 text-[12px] font-medium text-paper transition hover:bg-ink-700"
+                  >
+                    Review leave
+                  </Link>
+                </article>
+
+                <article className="rounded-lg border border-ink-300/70 bg-white p-4">
+                  <p className="text-[12px] text-ink-500">Onboarding tasks needing action</p>
+                  <p className="mt-2 text-[24px] tracking-tight">{onboardingNeedsAttention}</p>
+                  <Link
+                    href="/onboarding"
+                    className="mt-2 inline-flex rounded-full bg-ink-900 px-3 py-1 text-[12px] font-medium text-paper transition hover:bg-ink-700"
+                  >
+                    Open onboarding
+                  </Link>
+                </article>
+              </div>
+            </section>
+          ) : null}
         </>
       )}
 
