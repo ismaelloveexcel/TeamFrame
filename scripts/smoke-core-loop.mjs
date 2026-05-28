@@ -115,16 +115,33 @@ const TEST_EMAIL = `smoke-test@${TENANT_ID.slice(0, 8)}.internal`;
 
 const { data: existingEmps } = await sb
   .from("employees")
-  .select("id, full_name")
+  .select("id, full_name, status, deleted_at")
   .eq("tenant_id", TENANT_ID)
   .eq("email", TEST_EMAIL)
-  .is("deleted_at", null)
   .limit(1);
 
 let testEmp;
 if (existingEmps?.length) {
-  testEmp = existingEmps[0];
-  info(`employee already exists: ${testEmp.full_name} (${testEmp.id})`);
+  const existingEmp = existingEmps[0];
+  if (existingEmp.deleted_at) {
+    const { data: restoredEmp, error: restoreErr } = await sb
+      .from("employees")
+      .update({
+        status: "active",
+        deleted_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", existingEmp.id)
+      .select("id, full_name")
+      .single();
+
+    if (restoreErr) fail("restore archived smoke employee failed", restoreErr.message);
+    testEmp = restoredEmp;
+    pass(`restored archived smoke employee (${testEmp.id})`);
+  } else {
+    testEmp = existingEmp;
+    info(`employee already exists: ${testEmp.full_name} (${testEmp.id})`);
+  }
 } else {
   const { data: newEmp, error: empErr } = await sb
     .from("employees")
