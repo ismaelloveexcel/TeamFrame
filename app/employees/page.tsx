@@ -2,7 +2,7 @@ import { requireTenantActor } from "@/middleware/rbac";
 import { OrgChart } from "@/components/OrgChart";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { ConfirmSubmitButton } from "@/components/ConfirmSubmitButton";
-import { listEmployeesForAdmin, listOrgChart } from "@/services/employeeService";
+import { getEmployeeTelemetryCapabilities, listEmployeesForAdmin, listOrgChart } from "@/services/employeeService";
 import Link from "next/link";
 import { CopyInviteEmailButton } from "./CopyInviteEmailButton";
 import {
@@ -100,7 +100,10 @@ export default async function EmployeesPage({
     );
   }
 
-  const employees = await listEmployeesForAdmin(actor);
+  const [employees, telemetryCapabilities] = await Promise.all([
+    listEmployeesForAdmin(actor),
+    getEmployeeTelemetryCapabilities(actor),
+  ]);
   const invitePending = employees.filter((e) => e.status !== "inactive" && e.setup_status === "incomplete").length;
   const inviteSent = employees.filter((e) => e.status !== "inactive" && e.setup_status === "ready").length;
   const inviteActivated = employees.filter((e) => e.setup_status === "active").length;
@@ -173,6 +176,12 @@ export default async function EmployeesPage({
       <p className="mt-7 max-w-2xl text-[15px] text-ink-700">
         Add teammates, track invite progress, and keep onboarding moving from one place.
       </p>
+
+      {telemetryCapabilities.limitedMode ? (
+        <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
+          Limited telemetry mode: invite diagnostics are partially unavailable because schema columns are missing ({telemetryCapabilities.missingColumns.join(", ")}).
+        </p>
+      ) : null}
 
       <section className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">

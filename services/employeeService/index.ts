@@ -55,15 +55,137 @@ export type ActivationLinkResult = {
   activationLink: string;
 };
 
+const EMPLOYEE_TELEMETRY_COLUMNS = [
+  "invite_attempt_count",
+  "invite_last_attempt_at",
+  "invite_last_sent_at",
+  "invite_last_error",
+  "activated_at",
+] as const;
+
+type EmployeeTelemetryColumn = (typeof EMPLOYEE_TELEMETRY_COLUMNS)[number];
+
+type EmployeeTelemetryCapabilities = {
+  checkedAt: string;
+  missingColumns: EmployeeTelemetryColumn[];
+  limitedMode: boolean;
+};
+
+let employeeTelemetryCapabilitiesCache:
+  | {
+      value: EmployeeTelemetryCapabilities;
+      expiresAt: number;
+    }
+  | null = null;
+
+const EMPLOYEE_TELEMETRY_CACHE_TTL_MS = 5 * 60 * 1000;
+
+function isColumnMissingMessage(message: string, column: EmployeeTelemetryColumn): boolean {
+  const lower = message.toLowerCase();
+  return lower.includes("does not exist") && lower.includes(column);
+}
+
+function extractMissingTelemetryColumns(message: string): EmployeeTelemetryColumn[] {
+  const lower = message.toLowerCase();
+  return EMPLOYEE_TELEMETRY_COLUMNS.filter((column) => lower.includes(column));
+}
+
+function cacheEmployeeTelemetryCapabilities(value: EmployeeTelemetryCapabilities): EmployeeTelemetryCapabilities {
+  employeeTelemetryCapabilitiesCache = {
+    value,
+    expiresAt: Date.now() + EMPLOYEE_TELEMETRY_CACHE_TTL_MS,
+  };
+  return value;
+}
+
+function noteMissingTelemetryColumns(columns: EmployeeTelemetryColumn[], reason: string): void {
+  if (columns.length === 0) return;
+  const existing = employeeTelemetryCapabilitiesCache?.value.missingColumns ?? [];
+  const merged = Array.from(new Set([...existing, ...columns])) as EmployeeTelemetryColumn[];
+  cacheEmployeeTelemetryCapabilities({
+    checkedAt: new Date().toISOString(),
+    missingColumns: merged,
+    limitedMode: merged.length > 0,
+  });
+
+  console.warn("EMPLOYEE_SCHEMA_CAPABILITY_WARN", {
+    mode: "limited_telemetry",
+    reason,
+    missing_columns: merged,
+  });
+}
+
+async function detectEmployeeTelemetryCapabilities(): Promise<EmployeeTelemetryCapabilities> {
+  const now = Date.now();
+  if (employeeTelemetryCapabilitiesCache && employeeTelemetryCapabilitiesCache.expiresAt > now) {
+    return employeeTelemetryCapabilitiesCache.value;
+  }
+
+  const supabase = createServiceRoleClient();
+  const missingColumns: EmployeeTelemetryColumn[] = [];
+
+  for (const column of EMPLOYEE_TELEMETRY_COLUMNS) {
+    const { error } = await supabase
+      .from("employees")
+      .select(column)
+      .limit(1);
+
+    if (!error) {
+      continue;
+    }
+
+    if (isColumnMissingMessage(error.message, column)) {
+      missingColumns.push(column);
+      continue;
+    }
+
+    // Unknown schema/probe errors should degrade safely instead of crashing page requests.
+    missingColumns.push(column);
+    console.warn("EMPLOYEE_SCHEMA_CAPABILITY_WARN", {
+      mode: "limited_telemetry",
+      reason: "probe_error",
+      column,
+      message: error.message,
+    });
+  }
+
+  const capabilities = cacheEmployeeTelemetryCapabilities({
+    checkedAt: new Date().toISOString(),
+    missingColumns,
+    limitedMode: missingColumns.length > 0,
+  });
+
+  if (capabilities.limitedMode) {
+    console.warn("EMPLOYEE_SCHEMA_CAPABILITY_WARN", {
+      mode: "limited_telemetry",
+      reason: "columns_missing",
+      missing_columns: capabilities.missingColumns,
+      checked_at: capabilities.checkedAt,
+    });
+  }
+
+  return capabilities;
+}
+
+export async function getEmployeeTelemetryCapabilities(actor: Actor): Promise<EmployeeTelemetryCapabilities> {
+  requireAdmin(actor);
+  return detectEmployeeTelemetryCapabilities();
+}
+
 export async function listEmployeesForAdmin(actor: Actor): Promise<EmployeeFullRecord[]> {
   requireAdmin(actor);
   const tenantId = requireTenant(actor);
+  const capabilities = await detectEmployeeTelemetryCapabilities();
+  const baseSelect =
+    "id, tenant_id, full_name, email, role_title, department, timezone, manager_id, status, grade, setup_status, created_at, updated_at";
+  const telemetrySelect =
+    "invite_attempt_count, invite_last_attempt_at, invite_last_sent_at, invite_last_error, activated_at";
+  const selectColumns = capabilities.limitedMode ? baseSelect : `${baseSelect}, ${telemetrySelect}`;
+
   const supabase = createServiceRoleClient();
   const { data, error } = await supabase
     .from("employees")
-    .select(
-      "id, tenant_id, full_name, email, role_title, department, timezone, manager_id, status, grade, setup_status, created_at, updated_at",
-    )
+    .select(selectColumns)
     .eq("tenant_id", tenantId)
     .is("deleted_at", null)
     .order("full_name", { ascending: true });
@@ -490,6 +612,17 @@ async function recordInviteTelemetry(
     failureCode?: string;
   },
 ): Promise<void> {
+  const capabilities = await detectEmployeeTelemetryCapabilities();
+  if (capabilities.limitedMode) {
+    console.warn("EMPLOYEE_INVITE_TELEMETRY_UNAVAILABLE", {
+      tenant_id: tenantId,
+      employee_id: employeeId,
+      reason: "schema_columns_missing",
+      missing_columns: capabilities.missingColumns,
+    });
+    return;
+  }
+
   const supabase = createServiceRoleClient();
   const { data: existing, error: lookupError } = await supabase
     .from("employees")
@@ -501,6 +634,11 @@ async function recordInviteTelemetry(
 
   if (lookupError) {
     if (isInviteTelemetryColumnMissing(lookupError.message)) {
+      const missing = extractMissingTelemetryColumns(lookupError.message);
+      noteMissingTelemetryColumns(
+        missing.length > 0 ? missing : [...EMPLOYEE_TELEMETRY_COLUMNS],
+        "lookup_missing_column",
+      );
       console.warn("EMPLOYEE_INVITE_TELEMETRY_UNAVAILABLE", lookupError.message);
       return;
     }
@@ -525,6 +663,11 @@ async function recordInviteTelemetry(
 
   if (updateError) {
     if (isInviteTelemetryColumnMissing(updateError.message)) {
+      const missing = extractMissingTelemetryColumns(updateError.message);
+      noteMissingTelemetryColumns(
+        missing.length > 0 ? missing : [...EMPLOYEE_TELEMETRY_COLUMNS],
+        "update_missing_column",
+      );
       console.warn("EMPLOYEE_INVITE_TELEMETRY_UNAVAILABLE", updateError.message);
       return;
     }
