@@ -35,6 +35,19 @@ function formatDate(iso: string): string {
   });
 }
 
+function leaveLengthLabel(startDate: string, endDate: string): string {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+  return days === 1 ? "1 day" : `${days} days`;
+}
+
+function leaveStatusHelp(status: LeaveRecord["status"]): string {
+  if (status === "pending") return "Waiting for manager approval.";
+  if (status === "approved") return "Approved and ready to plan around.";
+  return "Not approved this time. You can submit a new request if plans change.";
+}
+
 function StatusBadge({ status }: { status: LeaveRecord["status"] }) {
   const styles: Record<LeaveRecord["status"], string> = {
     pending: "bg-amber-50 text-amber-700 border-amber-200",
@@ -215,7 +228,7 @@ export default async function LeavesPage({
         <div className="space-y-2">
           <p className="text-[12px] tracking-[0.14em] text-ink-500">Self-service</p>
           <h1 className="text-[34px] leading-tight tracking-tight">My leave</h1>
-          <p className="text-[14px] text-ink-500">Submit time off and track decisions in one place.</p>
+          <p className="text-[14px] text-ink-500">Request time away and check the latest decision without chasing your manager.</p>
         </div>
       </div>
 
@@ -284,27 +297,32 @@ export default async function LeavesPage({
         <section className="mt-6 rounded-xl border border-ink-300/70 bg-white/80">
           <div className="border-b border-ink-300/60 px-5 py-4">
             <h2 className="text-[17px] font-medium tracking-tight">History</h2>
+            <p className="mt-1 text-[13px] text-ink-500">Newest requests appear first.</p>
           </div>
           <ul className="divide-y divide-ink-300/40">
             {myLeaves.map((leave) => (
-              <li key={leave.id} className="flex items-center justify-between px-5 py-4">
-                <div className="space-y-0.5">
+              <li key={leave.id} className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
+                <div className="min-w-0 flex-1 space-y-1">
                   <p className="text-[15px] text-ink-900">
                     {formatDate(leave.start_date)} → {formatDate(leave.end_date)}
                   </p>
                   <p className="text-[12px] text-ink-500">
-                    Submitted {formatDate(leave.created_at)}
+                    {leaveLengthLabel(leave.start_date, leave.end_date)} · Submitted {formatDate(leave.created_at)}
                   </p>
+                  <p className="text-[12px] text-ink-500">{leaveStatusHelp(leave.status)}</p>
                 </div>
-                <StatusBadge status={leave.status} />
+                <div className="space-y-1 text-left sm:text-right">
+                  <StatusBadge status={leave.status} />
+                  <p className="text-[12px] text-ink-500">Last updated {formatDate(leave.updated_at)}</p>
+                </div>
               </li>
             ))}
           </ul>
         </section>
       ) : actor.employeeId ? (
         <section className="mt-6 rounded-xl border border-dashed border-ink-300/80 bg-white/60 p-6 text-center">
-          <p className="text-[15px] text-ink-700">No leave requests yet.</p>
-          <p className="mt-2 text-[14px] text-ink-500">When you submit a request, status updates will appear here.</p>
+          <p className="text-[15px] text-ink-700">You have not requested time off yet.</p>
+          <p className="mt-2 text-[14px] text-ink-500">When you do, approvals and updates will appear here automatically.</p>
         </section>
       ) : null}
     </main>
