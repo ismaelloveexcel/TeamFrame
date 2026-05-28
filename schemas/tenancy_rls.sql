@@ -34,6 +34,7 @@ as $$
       from employees e
       where lower(e.email) = current_actor_email()
         and e.deleted_at is null
+      order by e.created_at asc, e.id asc
       limit 1
     )
   );
@@ -47,6 +48,7 @@ as $$
   select app_role() = 'admin';
 $$;
 
+alter table companies enable row level security;
 alter table employees enable row level security;
 alter table employee_profiles enable row level security;
 alter table compensation enable row level security;
@@ -68,12 +70,35 @@ using (
   and (tenant_id is null or tenant_id = current_actor_tenant_id())
 );
 
+drop policy if exists companies_select_tenant_scoped on companies;
+create policy companies_select_tenant_scoped on companies
+for select
+using (
+  id = current_actor_tenant_id()
+);
+
+drop policy if exists companies_write_admin on companies;
+create policy companies_write_admin on companies
+for all
+using (
+  is_current_actor_admin()
+  and id = current_actor_tenant_id()
+)
+with check (
+  is_current_actor_admin()
+  and id = current_actor_tenant_id()
+);
+
 drop policy if exists employees_select on employees;
 create policy employees_select on employees
 for select
 using (
   tenant_id = current_actor_tenant_id()
   and deleted_at is null
+  and (
+    is_current_actor_admin()
+    or lower(email) = current_actor_email()
+  )
 );
 
 drop policy if exists employees_insert on employees;
@@ -101,6 +126,53 @@ create policy employee_profiles_select on employee_profiles
 for select
 using (
   tenant_id = current_actor_tenant_id()
+  and (
+    is_current_actor_admin()
+    or employee_id in (
+      select id
+      from employees
+      where lower(email) = current_actor_email()
+        and tenant_id = current_actor_tenant_id()
+        and deleted_at is null
+    )
+  )
+);
+
+drop policy if exists onboarding_tasks_select on onboarding_tasks;
+create policy onboarding_tasks_select on onboarding_tasks
+for select
+using (
+  tenant_id = current_actor_tenant_id()
+  and (
+    is_current_actor_admin()
+    or employee_id in (
+      select id
+      from employees
+      where lower(email) = current_actor_email()
+        and tenant_id = current_actor_tenant_id()
+        and deleted_at is null
+    )
+  )
+);
+
+drop policy if exists onboarding_tasks_insert_admin on onboarding_tasks;
+create policy onboarding_tasks_insert_admin on onboarding_tasks
+for insert
+with check (
+  is_current_actor_admin()
+  and tenant_id = current_actor_tenant_id()
+);
+
+drop policy if exists onboarding_tasks_update_admin on onboarding_tasks;
+create policy onboarding_tasks_update_admin on onboarding_tasks
+for update
+using (
+  is_current_actor_admin()
+  and tenant_id = current_actor_tenant_id()
+)
+with check (
+  is_current_actor_admin()
+  and tenant_id = current_actor_tenant_id()
 );
 
 drop policy if exists employee_profiles_write_admin on employee_profiles;
@@ -237,6 +309,10 @@ create policy policies_select on policies
 for select
 using (
   tenant_id = current_actor_tenant_id()
+  and (
+    is_current_actor_admin()
+    or is_published
+  )
 );
 
 drop policy if exists policies_write_admin on policies;
@@ -256,6 +332,10 @@ create policy procedures_select on procedures
 for select
 using (
   tenant_id = current_actor_tenant_id()
+  and (
+    is_current_actor_admin()
+    or is_published
+  )
 );
 
 drop policy if exists procedures_write_admin on procedures;

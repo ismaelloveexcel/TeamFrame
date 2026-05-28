@@ -109,3 +109,20 @@ create trigger employees_set_updated_at
 before update on employees
 for each row
 execute function employees_touch_updated_at();
+
+create or replace view employees_public as
+select
+  id,
+  tenant_id,
+  full_name,
+  role_title,
+  department,
+  manager_id,
+  status
+from employees
+where tenant_id = current_actor_tenant_id()
+  and deleted_at is null;
+
+revoke all on table employees_public from public;
+grant select on table employees_public to authenticated;
+grant select on table employees_public to service_role;

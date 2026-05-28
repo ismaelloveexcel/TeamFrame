@@ -11,6 +11,8 @@ create table if not exists companies (
   archived_at timestamptz
 );
 
+alter table companies enable row level security;
+
 create unique index if not exists companies_slug_idx on companies(slug);
 
 -- Bootstrap a deterministic local tenant so schema upgrades can backfill rows.
