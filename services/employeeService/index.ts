@@ -92,7 +92,22 @@ type EmployeeRow = EmployeeFullRecord & {
   tenant_id: string;
 };
 
-type InviteResult = "invited" | "linked" | "conflict" | "failed";
+type InviteFailureCategory =
+  | "rate_limit"
+  | "redirect_mismatch"
+  | "provider_config"
+  | "user_lookup_failed"
+  | "metadata_failed"
+  | "auth_api_failed"
+  | "unknown";
+
+type InviteResult = {
+  status: "invited" | "linked" | "conflict" | "failed";
+  category?: InviteFailureCategory;
+  message?: string;
+  code?: string;
+  statusCode?: number;
+};
 
 function requireTenant(actor: Actor): string {
   if (!actor.tenantId) {
@@ -143,6 +158,95 @@ function getAuthErrorCode(error: unknown): string {
   return typeof maybeCode === "string" ? maybeCode.toLowerCase() : "";
 }
 
+function getAuthErrorStatus(error: unknown): number | null {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+  const maybeStatus = (error as { status?: unknown }).status;
+  return typeof maybeStatus === "number" ? maybeStatus : null;
+}
+
+function getAuthErrorMessage(error: unknown): string {
+  if (!error || typeof error !== "object") {
+    return "";
+  }
+  const maybeMessage = (error as { message?: unknown }).message;
+  return typeof maybeMessage === "string" ? maybeMessage : "";
+}
+
+function classifyInviteFailure(error: unknown): InviteFailureCategory {
+  const code = getAuthErrorCode(error);
+  const message = getAuthErrorMessage(error).toLowerCase();
+  const status = getAuthErrorStatus(error);
+
+  if (code.includes("rate") || message.includes("rate limit") || status === 429) {
+    return "rate_limit";
+  }
+  if (
+    message.includes("redirect") ||
+    message.includes("redirect_to") ||
+    message.includes("not allowed")
+  ) {
+    return "redirect_mismatch";
+  }
+  if (
+    message.includes("smtp") ||
+    message.includes("email provider") ||
+    message.includes("sending confirmation email") ||
+    message.includes("email not confirmed")
+  ) {
+    return "provider_config";
+  }
+  if (message.includes("metadata") || message.includes("app_metadata")) {
+    return "metadata_failed";
+  }
+  if (code || message) {
+    return "auth_api_failed";
+  }
+  return "unknown";
+}
+
+function mapInviteFailureToErrorCode(category: InviteFailureCategory): string {
+  if (category === "rate_limit") return "EMPLOYEE_INVITE_RATE_LIMIT";
+  if (category === "redirect_mismatch") return "EMPLOYEE_INVITE_REDIRECT_MISMATCH";
+  if (category === "provider_config") return "EMPLOYEE_INVITE_PROVIDER_CONFIG";
+  if (category === "user_lookup_failed") return "EMPLOYEE_INVITE_USER_LOOKUP_FAILED";
+  if (category === "metadata_failed") return "EMPLOYEE_INVITE_METADATA_FAILED";
+  return "EMPLOYEE_INVITE_FAILED";
+}
+
+function logInviteDiagnostic(payload: {
+  operation: "create" | "reinvite";
+  tenantId: string;
+  employeeId?: string;
+  email: string;
+  result: InviteResult["status"];
+  category?: InviteFailureCategory;
+  code?: string;
+  statusCode?: number;
+  message?: string;
+}) {
+  const entry = {
+    operation: payload.operation,
+    tenant_id: payload.tenantId,
+    employee_id: payload.employeeId ?? null,
+    email: payload.email,
+    result: payload.result,
+    category: payload.category ?? null,
+    auth_code: payload.code ?? null,
+    auth_status: payload.statusCode ?? null,
+    auth_message: payload.message ?? null,
+  };
+
+  if (payload.result === "failed" || payload.result === "conflict") {
+    console.error("EMPLOYEE_INVITE_DIAGNOSTIC", entry);
+    return;
+  }
+  if (process.env.NODE_ENV === "development") {
+    console.info("EMPLOYEE_INVITE_DIAGNOSTIC", entry);
+  }
+}
+
 function isAlreadyExistsAuthError(error: unknown): boolean {
   const code = getAuthErrorCode(error);
   if (code.includes("already_exists") || code.includes("exists")) {
@@ -186,8 +290,7 @@ async function setEmployeeAuthMetadata(userId: string, tenantId: string): Promis
   const supabase = createServiceRoleClient();
   const { data: userData, error: userError } = await supabase.auth.admin.getUserById(userId);
   if (userError || !userData?.user) {
-    console.error("EMPLOYEE_INVITE_GET_USER_FAILED", userError?.message ?? "USER_NOT_FOUND");
-    return;
+    throw new Error(`EMPLOYEE_INVITE_GET_USER_FAILED: ${userError?.message ?? "USER_NOT_FOUND"}`);
   }
 
   const currentAppMetadata =
@@ -216,8 +319,7 @@ async function setEmployeeAuthMetadata(userId: string, tenantId: string): Promis
   });
 
   if (updateError) {
-    console.error("EMPLOYEE_INVITE_METADATA_UPDATE_FAILED", updateError.message);
-    throw new Error("EMPLOYEE_INVITE_FAILED");
+    throw new Error(`EMPLOYEE_INVITE_METADATA_UPDATE_FAILED: ${updateError.message}`);
   }
 }
 
@@ -233,38 +335,59 @@ async function inviteEmployeeAuthUser(email: string, tenantId: string): Promise<
 
   if (error) {
     if (!isAlreadyExistsAuthError(error)) {
-      console.error("EMPLOYEE_INVITE_FAILED", error.message);
-      return "failed";
+      return {
+        status: "failed",
+        category: classifyInviteFailure(error),
+        message: getAuthErrorMessage(error),
+        code: getAuthErrorCode(error),
+        statusCode: getAuthErrorStatus(error) ?? undefined,
+      };
     }
 
     const existingUserId = await findAuthUserIdByEmail(email);
     if (existingUserId) {
       try {
         await setEmployeeAuthMetadata(existingUserId, tenantId);
-        return "linked";
+        return { status: "linked" };
       } catch (inviteError) {
         if (inviteError instanceof Error && inviteError.message === "EMPLOYEE_INVITE_TENANT_CONFLICT") {
-          return "conflict";
+          return { status: "conflict", category: "metadata_failed" };
         }
-        return "failed";
+        return {
+          status: "failed",
+          category: classifyInviteFailure(inviteError),
+          message: getAuthErrorMessage(inviteError),
+          code: getAuthErrorCode(inviteError),
+          statusCode: getAuthErrorStatus(inviteError) ?? undefined,
+        };
       }
     }
-    return "failed";
+    return {
+      status: "failed",
+      category: "user_lookup_failed",
+      message: "Could not locate an existing auth user for invite retry",
+    };
   }
 
   if (data?.user?.id) {
     try {
       await setEmployeeAuthMetadata(data.user.id, tenantId);
-      return "linked";
+      return { status: "linked" };
     } catch (inviteError) {
       if (inviteError instanceof Error && inviteError.message === "EMPLOYEE_INVITE_TENANT_CONFLICT") {
-        return "conflict";
+        return { status: "conflict", category: "metadata_failed" };
       }
-      return "failed";
+      return {
+        status: "failed",
+        category: classifyInviteFailure(inviteError),
+        message: getAuthErrorMessage(inviteError),
+        code: getAuthErrorCode(inviteError),
+        statusCode: getAuthErrorStatus(inviteError) ?? undefined,
+      };
     }
   }
 
-  return "invited";
+  return { status: "invited" };
 }
 
 async function rowExistsForTenant(
@@ -427,7 +550,7 @@ export async function createEmployee(actor: Actor, input: unknown): Promise<Empl
   const created = data as unknown as EmployeeRow;
 
   const inviteResult = await inviteEmployeeAuthUser(created.email, tenantId);
-  if (inviteResult === "linked" || inviteResult === "invited") {
+  if (inviteResult.status === "linked" || inviteResult.status === "invited") {
     await setEmployeeSetupStatus(tenantId, created.id, "ready");
     created.setup_status = "ready";
   } else {
@@ -435,13 +558,25 @@ export async function createEmployee(actor: Actor, input: unknown): Promise<Empl
     created.setup_status = "incomplete";
   }
 
+  logInviteDiagnostic({
+    operation: "create",
+    tenantId,
+    employeeId: created.id,
+    email: created.email,
+    result: inviteResult.status,
+    category: inviteResult.category,
+    code: inviteResult.code,
+    statusCode: inviteResult.statusCode,
+    message: inviteResult.message,
+  });
+
   await writeAudit(actor, "employee.created", created.id, true);
 
-  if (inviteResult === "conflict") {
+  if (inviteResult.status === "conflict") {
     throw new Error("EMPLOYEE_INVITE_TENANT_CONFLICT");
   }
-  if (inviteResult === "failed") {
-    throw new Error("EMPLOYEE_INVITE_FAILED");
+  if (inviteResult.status === "failed") {
+    throw new Error(mapInviteFailureToErrorCode(inviteResult.category ?? "unknown"));
   }
 
   // Fire activation event if this is the tenant's first employee.
@@ -575,15 +710,38 @@ export async function reinviteEmployee(actor: Actor, employeeId: string): Promis
   }
 
   const inviteResult = await inviteEmployeeAuthUser(employee.email, tenantId);
-  if (inviteResult === "linked" || inviteResult === "invited") {
+  if (inviteResult.status === "linked" || inviteResult.status === "invited") {
     await setEmployeeSetupStatus(tenantId, employeeId, "ready");
     await writeAudit(actor, "employee.reinvited", employeeId, true);
+    logInviteDiagnostic({
+      operation: "reinvite",
+      tenantId,
+      employeeId,
+      email: employee.email,
+      result: inviteResult.status,
+      category: inviteResult.category,
+      code: inviteResult.code,
+      statusCode: inviteResult.statusCode,
+      message: inviteResult.message,
+    });
     return;
   }
 
   await setEmployeeSetupStatus(tenantId, employeeId, "incomplete");
-  if (inviteResult === "conflict") {
+  logInviteDiagnostic({
+    operation: "reinvite",
+    tenantId,
+    employeeId,
+    email: employee.email,
+    result: inviteResult.status,
+    category: inviteResult.category,
+    code: inviteResult.code,
+    statusCode: inviteResult.statusCode,
+    message: inviteResult.message,
+  });
+
+  if (inviteResult.status === "conflict") {
     throw new Error("EMPLOYEE_INVITE_TENANT_CONFLICT");
   }
-  throw new Error("EMPLOYEE_INVITE_FAILED");
+  throw new Error(mapInviteFailureToErrorCode(inviteResult.category ?? "unknown"));
 }

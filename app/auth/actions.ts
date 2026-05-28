@@ -32,8 +32,15 @@ export async function sendMagicLink(formData: FormData): Promise<void> {
     },
   });
 
-  if (error && process.env.NODE_ENV === "development") {
-    console.warn(`[auth] signInWithOtp (${email}): ${error.message}`);
+  if (error) {
+    const code = typeof (error as { code?: unknown }).code === "string" ? (error as { code: string }).code : null;
+    const status = typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : null;
+    console.warn("AUTH_SEND_MAGIC_LINK_DIAGNOSTIC", {
+      email,
+      code,
+      status,
+      message: error.message,
+    });
   }
   // In all cases land on /auth/check-email — never reveal whether the email
   // is a known user (prevents enumeration).
