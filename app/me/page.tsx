@@ -14,6 +14,7 @@ export const dynamic = "force-dynamic";
 const STATUS_COPY: Record<string, string> = {
   completed: "Onboarding task completed.",
   submitted: "Leave request submitted.",
+  session_recovered: "Your session was already active. The stale sign-in link was ignored.",
 };
 
 const ERROR_COPY: Record<string, string> = {

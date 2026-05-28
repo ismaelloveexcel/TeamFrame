@@ -118,6 +118,7 @@ const STATUS_COPY: Record<string, string> = {
   archived: "Employee archived from the action center.",
   decided: "Leave decision recorded.",
   activation_link_ready: "Activation link generated from the action center.",
+  session_recovered: "Your session was already active. The stale sign-in link was ignored.",
 };
 
 const DECISION_COPY: Record<string, string> = {
