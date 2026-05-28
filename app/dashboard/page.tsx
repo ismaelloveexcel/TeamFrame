@@ -110,6 +110,12 @@ export default async function DashboardPage() {
   ).length;
   const pendingLeaveCount = pendingLeaves.length;
   const onboardingNeedsAttention = onboardingTasks.filter((task) => task.status === "pending").length;
+  const onboardingCompletionRate =
+    onboardingTasks.length > 0
+      ? Math.round(
+          (onboardingTasks.filter((task) => task.status === "completed").length / onboardingTasks.length) * 100,
+        )
+      : 0;
   const pendingInviteEmployees = adminEmployees
     .filter((e) => e.status !== "inactive" && e.setup_status === "incomplete")
     .slice(0, 3);
@@ -305,6 +311,27 @@ export default async function DashboardPage() {
               <p className="mt-2 text-[24px] tracking-tight">{inactive}</p>
             </article>
           </section>
+
+          {isAdmin ? (
+            <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
+                <p className="text-[12px] text-ink-500">Active employee count</p>
+                <p className="mt-2 text-[24px] tracking-tight">{active}</p>
+              </article>
+              <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
+                <p className="text-[12px] text-ink-500">Pending invite count</p>
+                <p className="mt-2 text-[24px] tracking-tight">{pendingInvites}</p>
+              </article>
+              <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
+                <p className="text-[12px] text-ink-500">Leave approval backlog</p>
+                <p className="mt-2 text-[24px] tracking-tight">{pendingLeaveCount}</p>
+              </article>
+              <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
+                <p className="text-[12px] text-ink-500">Onboarding completion rate</p>
+                <p className="mt-2 text-[24px] tracking-tight">{onboardingCompletionRate}%</p>
+              </article>
+            </section>
+          ) : null}
 
           {isAdmin ? (
             <section className="mt-6 rounded-xl border border-ink-300/70 bg-white/80 p-5">
