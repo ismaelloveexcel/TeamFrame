@@ -45,6 +45,11 @@ function defaultNextForRole(role: "admin" | "employee"): string {
 
 type CookieWipe = "none" | "verifier" | "all";
 
+type PreservedCookie = {
+  name: string;
+  value: string;
+};
+
 function redirectTo(origin: string, path: string, request: NextRequest, wipe: CookieWipe = "none") {
   const response = NextResponse.redirect(`${origin}${path}`);
   if (wipe === "none") return response;
@@ -57,6 +62,30 @@ function redirectTo(origin: string, path: string, request: NextRequest, wipe: Co
     } else if (wipe === "all" && (isVerifier || isAuthToken)) {
       response.cookies.delete(name);
     }
+  }
+  return response;
+}
+
+function snapshotAuthCookies(request: NextRequest): PreservedCookie[] {
+  return request.cookies
+    .getAll()
+    .filter((cookie) => cookie.name.includes("auth-token"))
+    .map((cookie) => ({ name: cookie.name, value: cookie.value }));
+}
+
+function redirectPreservingAuthSession(
+  origin: string,
+  path: string,
+  request: NextRequest,
+  preservedAuthCookies: readonly PreservedCookie[],
+) {
+  const response = redirectTo(origin, path, request, "verifier");
+  for (const cookie of preservedAuthCookies) {
+    response.cookies.set(cookie.name, cookie.value, {
+      path: "/",
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+    });
   }
   return response;
 }
@@ -121,6 +150,7 @@ function classifyCallbackFailure(stage: CallbackStage, error: unknown): Callback
 }
 
 function logCallbackDiagnostic(input: {
+  requestId: string;
   stage: CallbackStage;
   reason: CallbackReason;
   message?: string;
@@ -132,6 +162,7 @@ function logCallbackDiagnostic(input: {
   next: string;
 }) {
   const payload = {
+    request_id: input.requestId,
     stage: input.stage,
     reason: input.reason,
     code: input.code ?? null,
@@ -150,9 +181,14 @@ function logCallbackDiagnostic(input: {
   console.error("AUTH_CALLBACK_DIAGNOSTIC", payload);
 }
 
-function logCallbackEvent(event: "success" | "session_recovery" | "tenant_mismatch", payload: Record<string, unknown>) {
+function logCallbackEvent(
+  event: "success" | "session_recovery" | "tenant_mismatch",
+  requestId: string,
+  payload: Record<string, unknown>,
+) {
   const logger = event === "success" ? console.info : console.warn;
   logger("AUTH_CALLBACK_EVENT", {
+    request_id: requestId,
     event,
     ...payload,
   });
@@ -171,12 +207,14 @@ async function resolveSignedInDestination(userId: string) {
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
+  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type") ?? "magiclink";
   const { next, isStale: staleNext } = safeNext(searchParams.get("next"));
   const supabaseErr = searchParams.get("error_description") ?? searchParams.get("error");
   const supabase = await createServerClient();
+  const preservedAuthCookies = snapshotAuthCookies(request);
   const {
     data: { user: preExchangeUser },
   } = await supabase.auth.getUser();
@@ -184,6 +222,7 @@ export async function GET(request: NextRequest) {
 
   if (tokenHash && lastUsedTokenHash && tokenHash === lastUsedTokenHash) {
     logCallbackDiagnostic({
+      requestId,
       stage: "session_exchange",
       reason: "already_used_link",
       message: "Incoming token_hash matches last consumed callback token",
@@ -195,7 +234,7 @@ export async function GET(request: NextRequest) {
     if (preExchangeUser) {
       try {
         const destination = await resolveSignedInDestination(preExchangeUser.id);
-        logCallbackEvent("session_recovery", {
+        logCallbackEvent("session_recovery", requestId, {
           reason: "already_used_link",
           pre_auth_user_id: preExchangeUser.id,
           recovered_role: destination.identity.role,
@@ -211,6 +250,7 @@ export async function GET(request: NextRequest) {
 
   if (staleNext) {
     logCallbackDiagnostic({
+      requestId,
       stage: "session_exchange",
       reason: "stale_return_to",
       message: "Blocked stale or unsafe next param",
@@ -224,6 +264,7 @@ export async function GET(request: NextRequest) {
   if (supabaseErr) {
     const reason = classifyCallbackFailure("supabase_param", { message: supabaseErr });
     logCallbackDiagnostic({
+      requestId,
       stage: "supabase_param",
       reason,
       message: supabaseErr,
@@ -235,7 +276,7 @@ export async function GET(request: NextRequest) {
     if (preExchangeUser) {
       try {
         const destination = await resolveSignedInDestination(preExchangeUser.id);
-        logCallbackEvent("session_recovery", {
+        logCallbackEvent("session_recovery", requestId, {
           reason,
           pre_auth_user_id: preExchangeUser.id,
           recovered_role: destination.identity.role,
@@ -253,7 +294,7 @@ export async function GET(request: NextRequest) {
     if (preExchangeUser) {
       try {
         const destination = await resolveSignedInDestination(preExchangeUser.id);
-        logCallbackEvent("session_recovery", {
+        logCallbackEvent("session_recovery", requestId, {
           reason: "session_recovered",
           pre_auth_user_id: preExchangeUser.id,
           recovered_role: destination.identity.role,
@@ -262,6 +303,7 @@ export async function GET(request: NextRequest) {
         return redirectTo(origin, `${destination.path}?status=session_recovered`, request, "verifier");
       } catch {
         logCallbackDiagnostic({
+          requestId,
           stage: "missing_token",
           reason: "session_mismatch",
           message: "Signed-in session could not be recovered",
@@ -276,6 +318,7 @@ export async function GET(request: NextRequest) {
 
     const reason = classifyCallbackFailure("missing_token", null);
     logCallbackDiagnostic({
+      requestId,
       stage: "missing_token",
       reason,
       hasCode: Boolean(code),
@@ -305,6 +348,7 @@ export async function GET(request: NextRequest) {
   if (error) {
     const reason = classifyCallbackFailure("session_exchange", error);
     logCallbackDiagnostic({
+      requestId,
       stage: "session_exchange",
       reason,
       message: authErrorMessage(error),
@@ -318,7 +362,7 @@ export async function GET(request: NextRequest) {
     if (preExchangeUser) {
       try {
         const destination = await resolveSignedInDestination(preExchangeUser.id);
-        logCallbackEvent("session_recovery", {
+        logCallbackEvent("session_recovery", requestId, {
           reason,
           pre_auth_user_id: preExchangeUser.id,
           recovered_role: destination.identity.role,
@@ -339,6 +383,7 @@ export async function GET(request: NextRequest) {
   if (!user) {
     const reason = classifyCallbackFailure("user_lookup", null);
     logCallbackDiagnostic({
+      requestId,
       stage: "user_lookup",
       reason,
       hasCode: Boolean(code),
@@ -351,6 +396,7 @@ export async function GET(request: NextRequest) {
 
   if (preExchangeUser && preExchangeUser.id !== user.id) {
     logCallbackDiagnostic({
+      requestId,
       stage: "session_exchange",
       reason: "session_mismatch",
       message: "Callback resolved to a different auth user than active session",
@@ -359,13 +405,17 @@ export async function GET(request: NextRequest) {
       type,
       next,
     });
-    await supabase.auth.signOut();
-    return redirectTo(origin, "/auth?error=callback_failed&reason=session_mismatch", request, "all");
+    return redirectPreservingAuthSession(
+      origin,
+      "/auth?error=callback_failed&reason=session_mismatch",
+      request,
+      preservedAuthCookies,
+    );
   }
 
   const identity = await resolveIdentity(user.id);
   if (identity.role === "employee" && !identity.tenantId) {
-    logCallbackEvent("tenant_mismatch", {
+    logCallbackEvent("tenant_mismatch", requestId, {
       auth_user_id: identity.authUserId,
       role: identity.role,
       tenant_id: identity.tenantId,
@@ -377,6 +427,7 @@ export async function GET(request: NextRequest) {
   if (!identity.employeeId && identity.role !== "admin") {
     const reason = classifyCallbackFailure("identity_resolution", null);
     logCallbackDiagnostic({
+      requestId,
       stage: "identity_resolution",
       reason,
       message: "No employee record linked to authenticated user",
@@ -395,7 +446,7 @@ export async function GET(request: NextRequest) {
     properties: { role: identity.role },
   });
 
-  logCallbackEvent("success", {
+  logCallbackEvent("success", requestId, {
     auth_user_id: identity.authUserId,
     role: identity.role,
     tenant_id: identity.tenantId,
