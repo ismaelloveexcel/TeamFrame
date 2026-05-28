@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireTenantActor } from "@/middleware/rbac";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { listEmployeesForAdmin, listOrgChart } from "@/services/employeeService";
-import { listActivationEvents } from "@/services/activationService";
+import { listActivationEvents, listRecentAuditActivity } from "@/services/activationService";
 import { listPendingLeavesWithEmployee } from "@/services/leaveService";
 import { listAllOnboardingTasks } from "@/services/onboardingService";
 import { logoutAction } from "@/app/auth/actions";
@@ -20,6 +20,14 @@ const ACTIVATION_EVENTS = [
   { event: "activation_completed" },
 ] as const;
 
+const ACTIVITY_ACTIONS = [
+  "employee.created",
+  "employee.reinvited",
+  "onboarding.completed",
+  "leave.approved",
+  "leave.rejected",
+] as const;
+
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-GB", {
     day: "numeric",
@@ -34,6 +42,31 @@ function timeAgo(iso: string): string {
   if (diffHours < 24) return `updated ${diffHours}h ago`;
   const diffDays = Math.floor(diffHours / 24);
   return `updated ${diffDays}d ago`;
+}
+
+function activityLabel(actionType: string, subjectName: string | null): string {
+  if (actionType === "employee.created") {
+    return subjectName ? `Invite created for ${subjectName}` : "Invite created for a team member";
+  }
+  if (actionType === "employee.reinvited") {
+    return subjectName ? `Invite re-sent to ${subjectName}` : "Invite re-sent";
+  }
+  if (actionType === "onboarding.completed") {
+    return subjectName ? `Onboarding task completed by ${subjectName}` : "Onboarding task completed";
+  }
+  if (actionType === "leave.approved") {
+    return "Leave request approved";
+  }
+  if (actionType === "leave.rejected") {
+    return "Leave request rejected";
+  }
+  return "Activity updated";
+}
+
+function activityTone(actionType: string): "info" | "warning" | "success" {
+  if (actionType === "leave.rejected") return "warning";
+  if (actionType === "leave.approved" || actionType === "onboarding.completed") return "success";
+  return "info";
 }
 
 function QueueChip({
@@ -121,6 +154,8 @@ export default async function DashboardPage({
     isAdmin ? listActivationEvents(actor, ACTIVATION_EVENTS.map((e) => e.event)) : Promise.resolve([]),
   ]);
 
+  const recentAuditRows = isAdmin ? await listRecentAuditActivity(actor, ACTIVITY_ACTIONS, 12) : [];
+
   const employees = isAdmin
     ? adminEmployees.map((employee) => ({
         id: employee.id,
@@ -158,6 +193,29 @@ export default async function DashboardPage({
     ...pendingLeaves.map((leave) => leave.updated_at),
     ...onboardingAttentionItems.map((task) => task.updated_at),
   ].sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] ?? null;
+
+  const activationRows = adminEmployees
+    .filter((employee) => employee.setup_status === "active")
+    .sort((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime())
+    .slice(0, 4)
+    .map((employee) => ({
+      id: `activation-${employee.id}`,
+      timestamp: employee.updated_at,
+      label: `${employee.full_name} activated their account`,
+      tone: "success" as const,
+    }));
+
+  const activityItems = [
+    ...recentAuditRows.map((row) => ({
+      id: `audit-${row.timestamp}-${row.target_id ?? "none"}-${row.action_type}`,
+      timestamp: row.timestamp,
+      label: activityLabel(row.action_type, row.target_id ? (employeeMap.get(row.target_id) ?? null) : null),
+      tone: activityTone(row.action_type),
+    })),
+    ...activationRows,
+  ]
+    .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime())
+    .slice(0, 8);
 
   const eventMap = new Map(
     eventRows.map((r) => [r.event_name, r.created_at]),
@@ -590,6 +648,43 @@ export default async function DashboardPage({
                   </Link>
                 </article>
               </div>
+            </section>
+          ) : null}
+
+          {isAdmin ? (
+            <section className="mt-6 rounded-xl border border-ink-300/70 bg-white/80 p-5">
+              <div className="flex flex-wrap items-end justify-between gap-3 border-b border-ink-300/60 pb-4">
+                <div>
+                  <p className="text-[12px] tracking-[0.14em] text-ink-500">Visibility</p>
+                  <h2 className="text-[19px] font-medium tracking-tight">Recent activity</h2>
+                  <p className="mt-1 text-[14px] text-ink-500">Latest invites, onboarding completions, leave decisions, and account activations.</p>
+                </div>
+                <span className="text-[12px] text-ink-500">Showing {activityItems.length} most recent items</span>
+              </div>
+
+              {activityItems.length === 0 ? (
+                <p className="mt-4 rounded-md border border-ink-200 bg-ink-50/60 px-3 py-3 text-[13px] text-ink-500">
+                  No activity yet. Events will appear here as your team starts working.
+                </p>
+              ) : (
+                <ul className="mt-4 space-y-2">
+                  {activityItems.map((item) => (
+                    <li
+                      key={item.id}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-ink-200 bg-ink-50/60 px-3 py-2.5"
+                    >
+                      <div className="flex items-center gap-2">
+                        <QueueChip
+                          label={item.tone === "warning" ? "Attention" : item.tone === "success" ? "Done" : "Update"}
+                          tone={item.tone === "warning" ? "warning" : item.tone === "success" ? "success" : "info"}
+                        />
+                        <p className="text-[13px] text-ink-900">{item.label}</p>
+                      </div>
+                      <p className="text-[12px] text-ink-500">{timeAgo(item.timestamp)}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </section>
           ) : null}
         </>
