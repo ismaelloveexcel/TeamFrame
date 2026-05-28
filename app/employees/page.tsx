@@ -2,7 +2,12 @@ import { requireTenantActor } from "@/middleware/rbac";
 import { OrgChart } from "@/components/OrgChart";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { ConfirmSubmitButton } from "@/components/ConfirmSubmitButton";
-import { getEmployeeTelemetryCapabilities, listEmployeesForAdmin, listOrgChart } from "@/services/employeeService";
+import {
+  getEmployeeTelemetryCapabilities,
+  INVITE_RESEND_COOLDOWN_SECONDS,
+  listEmployeesForAdmin,
+  listOrgChart,
+} from "@/services/employeeService";
 import Link from "next/link";
 import { CopyInviteEmailButton } from "./CopyInviteEmailButton";
 import {
@@ -35,6 +40,7 @@ const ERROR_COPY: Record<string, string> = {
   EMPLOYEE_INVITE_TENANT_CONFLICT: "Invite blocked: this email is already linked to another company.",
   EMPLOYEE_INVITE_FAILED: "Employee saved, but invite delivery failed. Try Re-send invite.",
   EMPLOYEE_INVITE_RATE_LIMIT: "Invite rate limit reached. Wait briefly, then try Re-send invite.",
+  EMPLOYEE_RESEND_COOLDOWN: "Re-send is cooling down. Wait briefly before trying again.",
   EMPLOYEE_INVITE_REDIRECT_MISMATCH: "Invite blocked by redirect configuration. Check SITE_URL and Supabase redirect allow-list.",
   EMPLOYEE_INVITE_PROVIDER_CONFIG: "Invite provider is not fully configured. Ask an admin to check Supabase email settings.",
   EMPLOYEE_INVITE_USER_LOOKUP_FAILED: "Invite could not be linked to an existing auth user. Re-send invite.",
@@ -60,6 +66,12 @@ function formatDateTime(iso: string | null): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function getResendCooldownSeconds(lastAttemptAt: string | null): number {
+  if (!lastAttemptAt) return 0;
+  const elapsedSeconds = Math.floor((Date.now() - new Date(lastAttemptAt).getTime()) / 1000);
+  return Math.max(0, INVITE_RESEND_COOLDOWN_SECONDS - elapsedSeconds);
 }
 
 export default async function EmployeesPage({
@@ -110,51 +122,57 @@ export default async function EmployeesPage({
   const archived = employees.filter((e) => e.status === "inactive").length;
 
   function inviteState(employeeRecord: (typeof employees)[number]): {
-    label: "pending" | "awaiting" | "activated" | "archived" | "failed" | "expired";
+    label: "Pending delivery" | "Sent" | "Activated" | "Archived" | "Delivery failed" | "Rate limited";
     tone: string;
     help: string;
   } {
     if (employeeRecord.status === "inactive") {
       return {
-        label: "archived",
+        label: "Archived",
         tone: "border-ink-300 bg-ink-100 text-ink-700",
         help: "This profile is archived and hidden from active workflows.",
       };
     }
     if (employeeRecord.setup_status === "active") {
       return {
-        label: "activated",
+        label: "Activated",
         tone: "border-emerald-200 bg-emerald-50 text-emerald-700",
         help: employeeRecord.activated_at
           ? `Activated on ${formatDateTime(employeeRecord.activated_at)}.`
           : "Invite accepted and employee can access TeamFrame.",
       };
     }
+    if (employeeRecord.invite_last_error === "EMPLOYEE_INVITE_RATE_LIMIT") {
+      return {
+        label: "Rate limited",
+        tone: "border-amber-200 bg-amber-50 text-amber-700",
+        help: "Invite provider throttled this address. Wait briefly, then use Re-send invite or the activation link.",
+      };
+    }
     if (employeeRecord.invite_last_error) {
       return {
-        label: "failed",
+        label: "Delivery failed",
         tone: "border-red-200 bg-red-50 text-red-700",
         help: `Last invite error: ${employeeRecord.invite_last_error}. Use Re-send invite or generate a new activation link.`,
       };
     }
-    if (isInviteExpired(employeeRecord.invite_last_sent_at)) {
-      return {
-        label: "expired",
-        tone: "border-amber-200 bg-amber-50 text-amber-700",
-        help: "Last invite may have expired. Re-send or generate a fresh activation link.",
-      };
-    }
     if (employeeRecord.setup_status === "ready") {
       return {
-        label: "awaiting",
+        label: "Sent",
         tone: "border-sky-200 bg-sky-50 text-sky-700",
-        help: "Invite sent and waiting for first login.",
+        help: isInviteExpired(employeeRecord.invite_last_sent_at)
+          ? "Invite was sent and may be expiring soon. Re-send invite or generate a fresh activation link."
+          : "Invite sent and waiting for first login.",
       };
     }
+
     return {
-      label: "pending",
+      label: "Pending delivery",
       tone: "border-amber-200 bg-amber-50 text-amber-700",
-      help: "No successful invite yet. Send or generate an activation link from this card.",
+      help:
+        employeeRecord.invite_attempt_count > 0
+          ? "Invite is still pending delivery. Re-send invite if the employee has not received it."
+          : "No invite has been sent yet. Use Re-send invite or generate an activation link.",
     };
   }
 
@@ -267,6 +285,15 @@ export default async function EmployeesPage({
         ) : (
           employees.map((employee) => (
             <article key={employee.id} className="rounded-xl border border-ink-300/70 bg-white/80 p-5">
+              {(() => {
+                const resendCooldownSeconds = getResendCooldownSeconds(employee.invite_last_attempt_at);
+                const resendBlocked = resendCooldownSeconds > 0;
+                const resendGuidance = resendBlocked
+                  ? `Re-send cooldown active: retry in ${resendCooldownSeconds}s.`
+                  : "If delivery is delayed, use Re-send invite first, then activation link as fallback.";
+
+                return (
+                  <>
               {status === "reinvited" && employeeParam === employee.id ? (
                 <p className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-[13px] text-emerald-700">
                   Invite re-sent to this employee.
@@ -360,14 +387,18 @@ export default async function EmployeesPage({
                   <>
                     <form action={reinviteEmployeeAction} className="w-full sm:w-auto">
                       <input type="hidden" name="employee_id" value={employee.id} />
+                      <input type="hidden" name="return_to" value="/employees" />
                       <PendingSubmitButton
                         idleLabel="Re-send invite"
                         pendingLabel="Sending..."
+                        disabled={resendBlocked}
+                        disabledLabel={`Retry in ${resendCooldownSeconds}s`}
                         className="w-full rounded-full border border-ink-300 px-3 py-1 text-[12px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-400 sm:w-auto"
                       />
                     </form>
                     <form action={generateActivationLinkAction} className="w-full sm:w-auto">
                       <input type="hidden" name="employee_id" value={employee.id} />
+                      <input type="hidden" name="return_to" value="/employees" />
                       <PendingSubmitButton
                         idleLabel="Generate activation link"
                         pendingLabel="Generating..."
@@ -379,6 +410,7 @@ export default async function EmployeesPage({
                 <form action={archiveEmployeeAction} className="w-full sm:w-auto">
                   <input type="hidden" name="employee_id" value={employee.id} />
                   <input type="hidden" name="expected_updated_at" value={employee.updated_at} />
+                  <input type="hidden" name="return_to" value="/employees" />
                   <ConfirmSubmitButton
                     idleLabel="Archive employee"
                     pendingLabel="Archiving..."
@@ -387,6 +419,10 @@ export default async function EmployeesPage({
                   />
                 </form>
               </div>
+              <p className="mt-2 text-[12px] text-ink-500">{resendGuidance}</p>
+                  </>
+                );
+              })()}
             </article>
           ))
         )}

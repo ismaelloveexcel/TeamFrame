@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireTenantActor } from "@/middleware/rbac";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
-import { listEmployeesForAdmin, listOrgChart } from "@/services/employeeService";
+import { INVITE_RESEND_COOLDOWN_SECONDS, listEmployeesForAdmin, listOrgChart } from "@/services/employeeService";
 import {
   listActivationEvents,
   listRecentAuditActivity,
@@ -72,6 +72,12 @@ function timeAgo(iso: string): string {
   if (diffHours < 24) return `updated ${diffHours}h ago`;
   const diffDays = Math.floor(diffHours / 24);
   return `updated ${diffDays}d ago`;
+}
+
+function getResendCooldownSeconds(lastAttemptAt: string | null): number {
+  if (!lastAttemptAt) return 0;
+  const elapsedSeconds = Math.floor((Date.now() - new Date(lastAttemptAt).getTime()) / 1000);
+  return Math.max(0, INVITE_RESEND_COOLDOWN_SECONDS - elapsedSeconds);
 }
 
 function resolveDayBucket(iso: string): "Today" | "Yesterday" | "Earlier" {
@@ -194,6 +200,7 @@ const ERROR_COPY: Record<string, string> = {
   MISSING_EXPECTED_UPDATED_AT: "This action is out of date. Refresh and retry.",
   EMPLOYEE_INVITE_FAILED: "Invite delivery failed. Try again from the employee queue.",
   EMPLOYEE_INVITE_RATE_LIMIT: "Invite rate limit reached. Wait briefly, then retry from the queue.",
+  EMPLOYEE_RESEND_COOLDOWN: "Re-send is cooling down. Wait briefly before trying again.",
   EMPLOYEE_INVITE_REDIRECT_MISMATCH: "Invite redirect configuration is invalid. Verify SITE_URL and allow-list settings.",
   EMPLOYEE_INVITE_PROVIDER_CONFIG: "Invite provider is not configured correctly. Verify email provider settings.",
   EMPLOYEE_INVITE_USER_LOOKUP_FAILED: "Invite user lookup failed. Retry from the queue.",
@@ -618,6 +625,11 @@ export default async function DashboardPage({
                     {pendingInviteEmployees.length > 0 ? (
                       pendingInviteEmployees.map((employee) => (
                         <div key={employee.id} className="rounded-md border border-ink-200 bg-ink-50/60 px-3 py-3">
+                          {(() => {
+                            const resendCooldownSeconds = getResendCooldownSeconds(employee.invite_last_attempt_at);
+                            const resendBlocked = resendCooldownSeconds > 0;
+                            return (
+                              <>
                           {status === "reinvited" && employeeParam === employee.id ? (
                             <p className="mb-2 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[12px] text-emerald-700">
                               Invite sent again.
@@ -650,6 +662,8 @@ export default async function DashboardPage({
                               <PendingSubmitButton
                                 idleLabel="Re-send invite"
                                 pendingLabel="Sending..."
+                                disabled={resendBlocked}
+                                disabledLabel={`Retry in ${resendCooldownSeconds}s`}
                                 className="rounded-full bg-ink-900 px-3 py-1.5 text-[12px] font-medium text-paper transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:bg-ink-300"
                               />
                             </form>
@@ -673,6 +687,12 @@ export default async function DashboardPage({
                               />
                             </form>
                           </div>
+                          {resendBlocked ? (
+                            <p className="mt-2 text-[12px] text-ink-500">Re-send cooldown active. Retry in {resendCooldownSeconds}s.</p>
+                          ) : null}
+                              </>
+                            );
+                          })()}
                         </div>
                       ))
                     ) : (

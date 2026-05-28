@@ -241,6 +241,8 @@ type InviteResult = {
   statusCode?: number;
 };
 
+export const INVITE_RESEND_COOLDOWN_SECONDS = 60;
+
 function requireTenant(actor: Actor): string {
   if (!actor.tenantId) {
     throw new Error("NO_TENANT_CONTEXT");
@@ -927,11 +929,12 @@ export async function softDeleteEmployee(
 export async function reinviteEmployee(actor: Actor, employeeId: string): Promise<void> {
   requireAdmin(actor);
   const tenantId = requireTenant(actor);
+  const capabilities = await detectEmployeeTelemetryCapabilities();
 
   const supabase = createServiceRoleClient();
   const { data, error } = await supabase
     .from("employees")
-    .select("id, email")
+    .select("id, email, invite_last_attempt_at")
     .eq("tenant_id", tenantId)
     .eq("id", employeeId)
     .is("deleted_at", null)
@@ -940,9 +943,25 @@ export async function reinviteEmployee(actor: Actor, employeeId: string): Promis
   if (error) {
     throw new Error(`EMPLOYEE_FETCH_FAILED: ${error.message}`);
   }
-  const employee = data as { id: string; email: string } | null;
+  const employee = data as { id: string; email: string; invite_last_attempt_at: string | null } | null;
   if (!employee) {
     throw new Error("NOT_FOUND");
+  }
+
+  if (!capabilities.limitedMode && employee.invite_last_attempt_at) {
+    const elapsedSeconds = Math.floor(
+      (Date.now() - new Date(employee.invite_last_attempt_at).getTime()) / 1000,
+    );
+    const secondsRemaining = Math.max(0, INVITE_RESEND_COOLDOWN_SECONDS - elapsedSeconds);
+    if (secondsRemaining > 0) {
+      console.warn("EMPLOYEE_INVITE_COOLDOWN_BLOCKED", {
+        tenant_id: tenantId,
+        employee_id: employeeId,
+        seconds_remaining: secondsRemaining,
+        last_attempt_at: employee.invite_last_attempt_at,
+      });
+      throw new Error("EMPLOYEE_RESEND_COOLDOWN");
+    }
   }
 
   const inviteResult = await inviteEmployeeAuthUser(employee.email, tenantId);
