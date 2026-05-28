@@ -11,7 +11,7 @@ import { assignOnboardingTaskAction, completeOnboardingTaskAction } from "./acti
 export const dynamic = "force-dynamic";
 
 const STATUS_COPY: Record<string, string> = {
-  assigned: "Task assigned.",
+  assigned: "Task assigned and ready for the employee.",
   completed: "Task marked complete.",
 };
 
@@ -38,11 +38,11 @@ function formatDate(iso: string): string {
 function TaskStatusBadge({ status }: { status: OnboardingTask["status"] }) {
   return status === "completed" ? (
     <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-      Done
+      Completed
     </span>
   ) : (
     <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-      Pending
+      Needs action
     </span>
   );
 }
@@ -81,8 +81,28 @@ export default async function OnboardingPage({
           <div className="space-y-2">
             <p className="text-[12px] tracking-[0.14em] text-ink-500">Admin</p>
             <h1 className="text-[34px] leading-tight tracking-tight">Onboarding tasks</h1>
+            <p className="text-[14px] text-ink-500">
+              Assign first-week tasks so every employee knows what to do next.
+            </p>
           </div>
         </div>
+
+        <section className="mt-7 grid gap-4 sm:grid-cols-3">
+          <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
+            <p className="text-[12px] text-ink-500">Needs attention</p>
+            <p className="mt-2 text-[24px] tracking-tight">{pending.length}</p>
+          </article>
+          <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
+            <p className="text-[12px] text-ink-500">Completed</p>
+            <p className="mt-2 text-[24px] tracking-tight">{done.length}</p>
+          </article>
+          <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
+            <p className="text-[12px] text-ink-500">Completion rate</p>
+            <p className="mt-2 text-[24px] tracking-tight">
+              {tasks.length > 0 ? Math.round((done.length / tasks.length) * 100) : 0}%
+            </p>
+          </article>
+        </section>
 
         {successMessage ? (
           <p className="mt-7 rounded-lg border border-accent/70 bg-white/80 px-4 py-3 text-[14px] text-accent">
@@ -99,7 +119,7 @@ export default async function OnboardingPage({
           <h2 className="text-[19px] font-medium tracking-tight">Assign task</h2>
           {employees.length === 0 ? (
             <p className="mt-3 text-[14px] text-ink-500">
-              No employees yet.{" "}
+              You do not have employees to assign yet.{" "}
               <Link href="/employees" className="underline hover:text-ink-900">Add an employee</Link> first.
             </p>
           ) : (
@@ -161,8 +181,8 @@ export default async function OnboardingPage({
           </section>
         ) : (
           <section className="mt-6 rounded-xl border border-dashed border-ink-300/80 bg-white/60 p-8 text-center">
-            <p className="text-[15px] text-ink-700">No pending tasks.</p>
-            <p className="mt-2 text-[14px] text-ink-500">Assign a task above to start tracking onboarding progress.</p>
+            <p className="text-[15px] text-ink-700">No tasks need attention right now.</p>
+            <p className="mt-2 text-[14px] text-ink-500">Assign a task above to keep new hires moving.</p>
           </section>
         )}
 
@@ -211,6 +231,7 @@ export default async function OnboardingPage({
         <div className="space-y-2">
           <p className="text-[12px] tracking-[0.14em] text-ink-500">Your checklist</p>
           <h1 className="text-[34px] leading-tight tracking-tight">Onboarding</h1>
+          <p className="text-[14px] text-ink-500">Finish each task to complete your setup.</p>
         </div>
       </div>
 
@@ -232,11 +253,28 @@ export default async function OnboardingPage({
         </section>
       ) : pending.length === 0 && done.length === 0 ? (
         <section className="mt-8 rounded-xl border border-dashed border-ink-300/80 bg-white/60 p-8 text-center">
-          <p className="text-[15px] text-ink-700">No tasks assigned yet.</p>
-          <p className="mt-2 text-[14px] text-ink-500">Your admin will assign onboarding tasks here.</p>
+          <p className="text-[15px] text-ink-700">No onboarding tasks yet.</p>
+          <p className="mt-2 text-[14px] text-ink-500">Your admin will add your first tasks here shortly.</p>
         </section>
       ) : (
         <>
+          <section className="mt-7 grid gap-4 sm:grid-cols-3">
+            <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
+              <p className="text-[12px] text-ink-500">To do</p>
+              <p className="mt-2 text-[24px] tracking-tight">{pending.length}</p>
+            </article>
+            <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
+              <p className="text-[12px] text-ink-500">Completed</p>
+              <p className="mt-2 text-[24px] tracking-tight">{done.length}</p>
+            </article>
+            <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
+              <p className="text-[12px] text-ink-500">Progress</p>
+              <p className="mt-2 text-[24px] tracking-tight">
+                {myTasks.length > 0 ? Math.round((done.length / myTasks.length) * 100) : 0}%
+              </p>
+            </article>
+          </section>
+
           {pending.length > 0 ? (
             <section className="mt-8 rounded-xl border border-ink-300/70 bg-white/80">
               <div className="border-b border-ink-300/60 px-5 py-4">

@@ -2,6 +2,7 @@ import { requireTenantActor } from "@/middleware/rbac";
 import { OrgChart } from "@/components/OrgChart";
 import { listEmployeesForAdmin, listOrgChart } from "@/services/employeeService";
 import Link from "next/link";
+import { CopyInviteEmailButton } from "./CopyInviteEmailButton";
 import {
   createEmployeeAction,
   updateEmployeeAction,
@@ -15,7 +16,7 @@ const STATUS_COPY: Record<string, string> = {
   created: "Employee created.",
   updated: "Employee updated.",
   archived: "Employee archived.",
-  reinvited: "Invite link sent.",
+  reinvited: "Invite link sent. The employee should use the newest email only.",
 };
 
 const ERROR_COPY: Record<string, string> = {
@@ -37,10 +38,10 @@ const ERROR_COPY: Record<string, string> = {
 export default async function EmployeesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; error?: string }>;
+  searchParams: Promise<{ status?: string; error?: string; employee?: string }>;
 }) {
   const actor = await requireTenantActor();
-  const { status, error } = await searchParams;
+  const { status, error, employee: employeeParam } = await searchParams;
 
   const successMessage = status ? (STATUS_COPY[status] ?? null) : null;
   const errorMessage = error ? (ERROR_COPY[error] ?? ERROR_COPY.UNKNOWN) : null;
@@ -73,6 +74,50 @@ export default async function EmployeesPage({
   }
 
   const employees = await listEmployeesForAdmin(actor);
+  const invitePending = employees.filter((e) => e.status !== "inactive" && e.setup_status === "incomplete").length;
+  const inviteSent = employees.filter((e) => e.status !== "inactive" && e.setup_status === "ready").length;
+  const inviteActivated = employees.filter((e) => e.setup_status === "active").length;
+  const archived = employees.filter((e) => e.status === "inactive").length;
+
+  function inviteState(employeeRecord: (typeof employees)[number]): {
+    label: "pending" | "invited" | "active" | "archived" | "retry";
+    tone: string;
+    help: string;
+  } {
+    if (employeeRecord.status === "inactive") {
+      return {
+        label: "archived",
+        tone: "border-ink-300 bg-ink-100 text-ink-700",
+        help: "This profile is archived and hidden from active workflows.",
+      };
+    }
+    if (employeeRecord.setup_status === "active") {
+      return {
+        label: "active",
+        tone: "border-emerald-200 bg-emerald-50 text-emerald-700",
+        help: "Invite accepted and employee can access TeamFrame.",
+      };
+    }
+    if (employeeRecord.setup_status === "ready") {
+      return {
+        label: "invited",
+        tone: "border-sky-200 bg-sky-50 text-sky-700",
+        help: "Invite email was sent. Waiting for first sign-in.",
+      };
+    }
+    if (error === "EMPLOYEE_INVITE_FAILED" && employeeParam === employeeRecord.id) {
+      return {
+        label: "retry",
+        tone: "border-red-200 bg-red-50 text-red-700",
+        help: "Latest invite delivery failed. Use Re-send invite.",
+      };
+    }
+    return {
+      label: "pending",
+      tone: "border-amber-200 bg-amber-50 text-amber-700",
+      help: "Invite not accepted yet. You can re-send from this card.",
+    };
+  }
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-14">
@@ -88,31 +133,25 @@ export default async function EmployeesPage({
       </div>
 
       <p className="mt-7 max-w-2xl text-[15px] text-ink-700">
-        Prioritized staffing surface for profile updates, status decisions, and archival actions.
+        Add teammates, track invite progress, and keep onboarding moving from one place.
       </p>
 
       <section className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
-          <p className="text-[12px] text-ink-500">Total profiles</p>
-          <p className="mt-2 text-[24px] tracking-tight">{employees.length}</p>
+          <p className="text-[12px] text-ink-500">Invite pending</p>
+          <p className="mt-2 text-[24px] tracking-tight">{invitePending}</p>
         </article>
         <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
-          <p className="text-[12px] text-ink-500">Active</p>
-          <p className="mt-2 text-[24px] tracking-tight">
-            {employees.filter((employee) => employee.status === "active").length}
-          </p>
+          <p className="text-[12px] text-ink-500">Invite sent</p>
+          <p className="mt-2 text-[24px] tracking-tight">{inviteSent}</p>
         </article>
         <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
-          <p className="text-[12px] text-ink-500">On leave</p>
-          <p className="mt-2 text-[24px] tracking-tight">
-            {employees.filter((employee) => employee.status === "on_leave").length}
-          </p>
+          <p className="text-[12px] text-ink-500">Signed in and active</p>
+          <p className="mt-2 text-[24px] tracking-tight">{inviteActivated}</p>
         </article>
         <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
-          <p className="text-[12px] text-ink-500">Inactive</p>
-          <p className="mt-2 text-[24px] tracking-tight">
-            {employees.filter((employee) => employee.status === "inactive").length}
-          </p>
+          <p className="text-[12px] text-ink-500">Archived profiles</p>
+          <p className="mt-2 text-[24px] tracking-tight">{archived}</p>
         </article>
       </section>
 
@@ -182,13 +221,28 @@ export default async function EmployeesPage({
         ) : (
           employees.map((employee) => (
             <article key={employee.id} className="rounded-xl border border-ink-300/70 bg-white/80 p-5">
+              {status === "reinvited" && employeeParam === employee.id ? (
+                <p className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-[13px] text-emerald-700">
+                  Invite re-sent to this employee.
+                </p>
+              ) : null}
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-[19px] font-medium tracking-tight">{employee.full_name}</h3>
                   <p className="text-[13px] text-ink-500">{employee.email}</p>
-                  <p className="mt-1 text-[12px] text-ink-500">
-                    Invite status: <span className="font-medium text-ink-700">{employee.setup_status}</span>
-                  </p>
+                  {(() => {
+                    const state = inviteState(employee);
+                    return (
+                      <>
+                        <p className="mt-2">
+                          <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium uppercase tracking-[0.08em] ${state.tone}`}>
+                            {state.label}
+                          </span>
+                        </p>
+                        <p className="mt-1 text-[12px] text-ink-500">{state.help}</p>
+                      </>
+                    );
+                  })()}
                 </div>
                 <span className="text-[12px] tracking-[0.12em] text-ink-500">
                   {employee.status.replace("_", " ")}
@@ -225,28 +279,30 @@ export default async function EmployeesPage({
                 </button>
               </form>
 
-              <form action={archiveEmployeeAction} className="mt-3">
-                <input type="hidden" name="employee_id" value={employee.id} />
-                <input type="hidden" name="expected_updated_at" value={employee.updated_at} />
-                <button
-                  type="submit"
-                  className="text-[13px] text-ink-700 underline decoration-ink-300 underline-offset-4"
-                >
-                  Archive employee
-                </button>
-              </form>
-
-              {employee.setup_status === "incomplete" ? (
-                <form action={reinviteEmployeeAction} className="mt-2">
+              <div className="mt-3 flex flex-wrap items-center gap-4">
+                <CopyInviteEmailButton email={employee.email} />
+                {employee.setup_status !== "active" && employee.status !== "inactive" ? (
+                  <form action={reinviteEmployeeAction}>
+                    <input type="hidden" name="employee_id" value={employee.id} />
+                    <button
+                      type="submit"
+                      className="text-[13px] text-ink-700 underline decoration-ink-300 underline-offset-4"
+                    >
+                      Re-send invite
+                    </button>
+                  </form>
+                ) : null}
+                <form action={archiveEmployeeAction}>
                   <input type="hidden" name="employee_id" value={employee.id} />
+                  <input type="hidden" name="expected_updated_at" value={employee.updated_at} />
                   <button
                     type="submit"
                     className="text-[13px] text-ink-700 underline decoration-ink-300 underline-offset-4"
                   >
-                    Re-send invite
+                    Archive employee
                   </button>
                 </form>
-              ) : null}
+              </div>
             </article>
           ))
         )}

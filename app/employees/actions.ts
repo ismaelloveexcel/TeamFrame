@@ -135,12 +135,14 @@ export async function archiveEmployeeAction(formData: FormData): Promise<void> {
 export async function reinviteEmployeeAction(formData: FormData): Promise<void> {
   let failed = false;
   let errorCode = "UNKNOWN";
+  let employeeId = "";
 
   try {
     const actor = await requireTenantActor();
     const parsed = ReinviteInputSchema.parse({
       employee_id: formData.get("employee_id"),
     });
+    employeeId = parsed.employee_id;
 
     await reinviteEmployee(actor, parsed.employee_id);
   } catch (error) {
@@ -149,8 +151,8 @@ export async function reinviteEmployeeAction(formData: FormData): Promise<void> 
   }
 
   if (failed) {
-    redirect(`/employees?error=${encodeURIComponent(errorCode)}`);
+    redirect(`/employees?error=${encodeURIComponent(errorCode)}&employee=${encodeURIComponent(employeeId)}`);
   }
 
-  redirect("/employees?status=reinvited");
+  redirect(`/employees?status=reinvited&employee=${encodeURIComponent(employeeId)}`);
 }
