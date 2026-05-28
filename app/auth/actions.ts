@@ -11,6 +11,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { env } from "@/lib/db/env";
 import { createServerClient } from "@/lib/db/supabaseServer";
+import { resolveIdentity } from "@/lib/rbac/roles";
 
 const EmailSchema = z.string().trim().toLowerCase().email();
 
@@ -52,4 +53,24 @@ export async function logoutAction(): Promise<void> {
   const supabase = await createServerClient();
   await supabase.auth.signOut();
   redirect("/auth?signed_out=1");
+}
+
+export async function continueCurrentSessionAction(): Promise<void> {
+  const supabase = await createServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/auth?error=callback_failed&reason=session_mismatch");
+  }
+
+  const identity = await resolveIdentity(user.id);
+  redirect(identity.role === "admin" ? "/dashboard" : "/me");
+}
+
+export async function switchAccountAction(): Promise<void> {
+  const supabase = await createServerClient();
+  await supabase.auth.signOut();
+  redirect("/auth?switched_account=1");
 }
