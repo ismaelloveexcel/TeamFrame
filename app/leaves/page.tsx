@@ -5,6 +5,7 @@ import {
 } from "@/services/leaveService";
 import { listPendingLeavesWithEmployee, type PendingLeaveWithEmployee } from "@/services/leaveService";
 import Link from "next/link";
+import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { submitLeaveAction, decideLeaveAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -172,12 +173,11 @@ export default async function LeavesPage({
                         value={leave.updated_at}
                       />
                       <input type="hidden" name="decision" value="approved" />
-                      <button
-                        type="submit"
-                        className="rounded-full bg-ink-900 px-4 py-1.5 text-[13px] font-medium text-paper transition hover:bg-ink-700"
-                      >
-                        Approve request
-                      </button>
+                      <PendingSubmitButton
+                        idleLabel="Approve request"
+                        pendingLabel="Approving..."
+                        className="rounded-full bg-ink-900 px-4 py-1.5 text-[13px] font-medium text-paper transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:bg-ink-300"
+                      />
                     </form>
                     <form action={decideLeaveAction}>
                       <input type="hidden" name="leave_id" value={leave.id} />
@@ -187,12 +187,11 @@ export default async function LeavesPage({
                         value={leave.updated_at}
                       />
                       <input type="hidden" name="decision" value="rejected" />
-                      <button
-                        type="submit"
-                        className="rounded-full border border-ink-300 px-4 py-1.5 text-[13px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900"
-                      >
-                        Reject request
-                      </button>
+                      <PendingSubmitButton
+                        idleLabel="Reject request"
+                        pendingLabel="Rejecting..."
+                        className="rounded-full border border-ink-300 px-4 py-1.5 text-[13px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-400"
+                      />
                     </form>
                   </div>
                 </li>
@@ -274,12 +273,11 @@ export default async function LeavesPage({
                 className="rounded-md border border-ink-300 px-3 py-2 text-[14px]"
               />
             </div>
-            <button
-              type="submit"
-              className="rounded-full bg-ink-900 px-5 py-2 text-[14px] font-medium text-paper transition hover:bg-ink-700"
-            >
-              Submit request
-            </button>
+            <PendingSubmitButton
+              idleLabel="Submit request"
+              pendingLabel="Submitting..."
+              className="rounded-full bg-ink-900 px-5 py-2 text-[14px] font-medium text-paper transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:bg-ink-300"
+            />
           </form>
         </section>
       ) : (

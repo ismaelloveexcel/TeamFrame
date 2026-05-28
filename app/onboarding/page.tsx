@@ -6,6 +6,7 @@ import {
 } from "@/services/onboardingService";
 import { listEmployeesForAdmin } from "@/services/employeeService";
 import Link from "next/link";
+import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { assignOnboardingTaskAction, completeOnboardingTaskAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -157,12 +158,11 @@ export default async function OnboardingPage({
                   className="rounded-md border border-ink-300 px-3 py-2 text-[14px]"
                 />
               </div>
-              <button
-                type="submit"
-                className="rounded-full bg-ink-900 px-5 py-2 text-[14px] font-medium text-paper transition hover:bg-ink-700"
-              >
-                Assign
-              </button>
+              <PendingSubmitButton
+                idleLabel="Assign"
+                pendingLabel="Assigning..."
+                className="rounded-full bg-ink-900 px-5 py-2 text-[14px] font-medium text-paper transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:bg-ink-300"
+              />
             </form>
           )}
         </section>
@@ -313,12 +313,11 @@ export default async function OnboardingPage({
                     <form action={completeOnboardingTaskAction}>
                       <input type="hidden" name="task_id" value={task.id} />
                       <input type="hidden" name="expected_updated_at" value={task.updated_at} />
-                      <button
-                        type="submit"
-                        className="rounded-full bg-ink-900 px-4 py-1.5 text-[13px] font-medium text-paper transition hover:bg-ink-700"
-                      >
-                        Mark done
-                      </button>
+                      <PendingSubmitButton
+                        idleLabel="Mark done"
+                        pendingLabel="Saving..."
+                        className="rounded-full bg-ink-900 px-4 py-1.5 text-[13px] font-medium text-paper transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:bg-ink-300"
+                      />
                     </form>
                   </li>
                 ))}

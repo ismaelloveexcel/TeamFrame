@@ -1,5 +1,6 @@
 import { requireTenantActor } from "@/middleware/rbac";
 import { OrgChart } from "@/components/OrgChart";
+import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { listEmployeesForAdmin, listOrgChart } from "@/services/employeeService";
 import Link from "next/link";
 import { CopyInviteEmailButton } from "./CopyInviteEmailButton";
@@ -206,12 +207,11 @@ export default async function EmployeesPage({
             required
             className="rounded-md border border-ink-300 px-3 py-2 text-[14px]"
           />
-          <button
-            type="submit"
-            className="rounded-md bg-ink-900 px-4 py-2 text-[14px] font-medium text-paper"
-          >
-            Create employee
-          </button>
+          <PendingSubmitButton
+            idleLabel="Create employee"
+            pendingLabel="Creating..."
+            className="rounded-md bg-ink-900 px-4 py-2 text-[14px] font-medium text-paper disabled:cursor-not-allowed disabled:bg-ink-300"
+          />
         </form>
       </section>
 
@@ -273,12 +273,11 @@ export default async function EmployeesPage({
                   <option value="on_leave">on_leave</option>
                   <option value="inactive">inactive</option>
                 </select>
-                <button
-                  type="submit"
-                  className="rounded-md bg-ink-900 px-3 py-2 text-[14px] font-medium text-paper transition hover:bg-ink-700"
-                >
-                  Save
-                </button>
+                <PendingSubmitButton
+                  idleLabel="Save"
+                  pendingLabel="Saving..."
+                  className="rounded-md bg-ink-900 px-3 py-2 text-[14px] font-medium text-paper transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:bg-ink-300"
+                />
               </form>
 
               <div className="mt-3 flex flex-wrap items-center gap-4">
@@ -286,23 +285,21 @@ export default async function EmployeesPage({
                 {employee.setup_status !== "active" && employee.status !== "inactive" ? (
                   <form action={reinviteEmployeeAction}>
                     <input type="hidden" name="employee_id" value={employee.id} />
-                    <button
-                      type="submit"
-                      className="rounded-full border border-ink-300 px-3 py-1 text-[12px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900"
-                    >
-                      Re-send invite
-                    </button>
+                    <PendingSubmitButton
+                      idleLabel="Re-send invite"
+                      pendingLabel="Sending..."
+                      className="rounded-full border border-ink-300 px-3 py-1 text-[12px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-400"
+                    />
                   </form>
                 ) : null}
                 <form action={archiveEmployeeAction}>
                   <input type="hidden" name="employee_id" value={employee.id} />
                   <input type="hidden" name="expected_updated_at" value={employee.updated_at} />
-                  <button
-                    type="submit"
-                    className="rounded-full border border-ink-300 px-3 py-1 text-[12px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900"
-                  >
-                    Archive employee
-                  </button>
+                  <PendingSubmitButton
+                    idleLabel="Archive employee"
+                    pendingLabel="Archiving..."
+                    className="rounded-full border border-ink-300 px-3 py-1 text-[12px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-400"
+                  />
                 </form>
               </div>
             </article>
