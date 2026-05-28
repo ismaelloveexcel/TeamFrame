@@ -28,6 +28,7 @@ const ACTIVATION_EVENTS = [
 
 const ACTIVITY_ACTIONS = [
   "employee.created",
+  "employee.updated",
   "employee.invite_sent",
   "employee.reinvited",
   "employee.archived",
@@ -97,14 +98,17 @@ function activityTitle(actionType: string, subjectName: string | null): string {
   if (actionType === "employee.created") {
     return subjectName ? `Employee profile created for ${subjectName}` : "Employee profile created";
   }
+  if (actionType === "employee.updated") {
+    return subjectName ? `Employee details updated for ${subjectName}` : "Employee details updated";
+  }
   if (actionType === "employee.invite_sent") {
     return subjectName ? `Invite sent to ${subjectName}` : "Invite sent";
   }
   if (actionType === "employee.reinvited") {
-    return subjectName ? `Invite re-sent to ${subjectName}` : "Invite re-sent";
+    return subjectName ? `Invite resent to ${subjectName}` : "Invite resent";
   }
   if (actionType === "employee.archived") {
-    return subjectName ? `${subjectName} archived` : "Employee archived";
+    return subjectName ? `${subjectName} archived from active workflows` : "Employee archived";
   }
   if (actionType === "onboarding.assigned") {
     return subjectName ? `Onboarding task assigned to ${subjectName}` : "Onboarding task assigned";
@@ -291,6 +295,7 @@ export default async function DashboardPage({
       .filter((employee) => Boolean(employee.auth_user_id))
       .map((employee) => [employee.auth_user_id as string, employee.full_name]),
   );
+  const timelineEmployeeNameById = new Map(employeeActors.map((employee) => [employee.id, employee.full_name]));
   const leaveById = new Map(timelineLeaves.map((leave) => [leave.id, leave]));
   const onboardingById = new Map(timelineOnboarding.map((task) => [task.id, task]));
   const latestQueueUpdate = [
@@ -318,19 +323,29 @@ export default async function DashboardPage({
         ? "You"
         : (actorNameByAuthUserId.get(row.actor_user_id) ?? "Team member");
 
-      const targetEmployeeName = row.target_id ? (employeeMap.get(row.target_id) ?? null) : null;
+      const targetEmployeeName = row.target_id
+        ? (timelineEmployeeNameById.get(row.target_id) ?? employeeMap.get(row.target_id) ?? null)
+        : null;
       const leaveMeta = row.target_id ? leaveById.get(row.target_id) : undefined;
       const onboardingMeta = row.target_id ? onboardingById.get(row.target_id) : undefined;
-      const leaveOwnerName = leaveMeta ? (employeeMap.get(leaveMeta.employee_id) ?? "Team member") : null;
-      const onboardingOwnerName = onboardingMeta ? (employeeMap.get(onboardingMeta.employee_id) ?? "Team member") : null;
+      const leaveOwnerName = leaveMeta
+        ? (timelineEmployeeNameById.get(leaveMeta.employee_id) ?? employeeMap.get(leaveMeta.employee_id) ?? "Archived employee")
+        : null;
+      const onboardingOwnerName = onboardingMeta
+        ? (timelineEmployeeNameById.get(onboardingMeta.employee_id) ?? employeeMap.get(onboardingMeta.employee_id) ?? "Archived employee")
+        : null;
 
-      let metadata = row.action_type === "employee.archived" ? "Employee record archived" : "Operational update";
+      let metadata = row.action_type === "employee.archived" ? "Historical record preserved" : "Operational update";
       if (leaveMeta) {
-        metadata = `${leaveOwnerName} · ${formatDate(leaveMeta.start_date)} to ${formatDate(leaveMeta.end_date)}`;
+        metadata = `${leaveOwnerName} · ${formatDate(leaveMeta.start_date)} to ${formatDate(leaveMeta.end_date)} · state ${leaveMeta.status}`;
       } else if (onboardingMeta) {
-        metadata = `${onboardingMeta.title} · ${onboardingOwnerName}`;
+        metadata = `${onboardingMeta.title} · ${onboardingOwnerName} · state ${row.action_type === "onboarding.completed" ? "completed" : "assigned"}`;
       } else if (targetEmployeeName) {
-        metadata = targetEmployeeName;
+        metadata = row.action_type === "employee.archived"
+          ? `${targetEmployeeName} · historical profile retained`
+          : targetEmployeeName;
+      } else if (row.action_type.startsWith("employee.")) {
+        metadata = "Employee record retained for audit history";
       }
 
       return {
@@ -696,7 +711,7 @@ export default async function DashboardPage({
                         </div>
                       ))
                     ) : (
-                      <p className="text-[13px] text-ink-500">No team members are waiting on an invite right now.</p>
+                      <p className="text-[13px] text-ink-500">No invite follow-up is needed right now. New delivery issues and pending activations will appear here.</p>
                     )}
                   </div>
                   <Link
@@ -762,7 +777,7 @@ export default async function DashboardPage({
                       </div>
                     ))}
                     {pendingLeaves.length === 0 ? (
-                      <p className="text-[13px] text-ink-500">No leave approvals are waiting for you.</p>
+                      <p className="text-[13px] text-ink-500">No leave approvals are waiting. New employee requests will appear here with actor and status context.</p>
                     ) : null}
                   </div>
                   <Link
@@ -799,7 +814,7 @@ export default async function DashboardPage({
                         </div>
                       ))
                     ) : (
-                      <p className="text-[13px] text-ink-500">No onboarding tasks are stalled right now.</p>
+                      <p className="text-[13px] text-ink-500">No onboarding tasks need intervention right now. New assignments and completions will surface here.</p>
                     )}
                   </div>
                   <Link
@@ -826,7 +841,7 @@ export default async function DashboardPage({
 
               {activityItems.length === 0 ? (
                 <p className="mt-4 rounded-md border border-ink-200 bg-ink-50/60 px-3 py-3 text-[13px] text-ink-500">
-                  No activity yet. Events will appear here as your team starts working.
+                  No operational activity yet. Employee, onboarding, leave, and activation events will appear here with actor and time context.
                 </p>
               ) : (
                 <div className="mt-4 space-y-5">
@@ -835,7 +850,7 @@ export default async function DashboardPage({
                       <p className="text-[12px] font-medium uppercase tracking-[0.12em] text-ink-500">{group.label}</p>
                       {group.items.length === 0 ? (
                         <p className="rounded-md border border-ink-200 bg-ink-50/40 px-3 py-2 text-[12px] text-ink-500">
-                          No events.
+                          No events in this time bucket.
                         </p>
                       ) : (
                         <ul className="space-y-2">
@@ -853,9 +868,8 @@ export default async function DashboardPage({
                                     />
                                     <p className="text-[13px] font-medium text-ink-900">{item.title}</p>
                                   </div>
-                                  <p className="text-[12px] text-ink-500">
-                                    {item.metadata} · by {item.actor}
-                                  </p>
+                                  <p className="text-[12px] text-ink-500">{item.metadata}</p>
+                                  <p className="text-[12px] text-ink-500">Actor: {item.actor}</p>
                                 </div>
                                 <p className="text-[12px] text-ink-500">{formatTimelineTimestamp(item.timestamp)}</p>
                               </div>

@@ -136,7 +136,7 @@ export default async function LeavesPage({
           <section className="mt-10 rounded-xl border border-dashed border-ink-300/80 bg-white/60 p-8 text-center">
             <p className="text-[16px] text-ink-700">No pending leave requests.</p>
             <p className="mt-2 text-[14px] text-ink-500">
-              New requests from employees will appear here for your review.
+              New requests from employees will appear here with clear submission timing and approval state.
             </p>
           </section>
         ) : (

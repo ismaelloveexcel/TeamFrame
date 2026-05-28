@@ -97,8 +97,7 @@ export async function listTimelineEmployeeActors(actor: Actor): Promise<Timeline
   const { data, error } = await supabase
     .from("employees")
     .select("id, auth_user_id, full_name")
-    .eq("tenant_id", tenantId)
-    .is("deleted_at", null);
+    .eq("tenant_id", tenantId);
 
   if (error) {
     throw new Error(`AUDIT_TIMELINE_EMPLOYEE_ACTORS_FAILED: ${error.message}`);

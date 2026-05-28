@@ -199,8 +199,8 @@ export default async function OnboardingPage({
           </section>
         ) : (
           <section className="mt-6 rounded-xl border border-dashed border-ink-300/80 bg-white/60 p-8 text-center">
-            <p className="text-[15px] text-ink-700">No tasks need attention right now.</p>
-            <p className="mt-2 text-[14px] text-ink-500">Assign a task above to keep new hires moving.</p>
+            <p className="text-[15px] text-ink-700">No onboarding tasks are waiting on action.</p>
+            <p className="mt-2 text-[14px] text-ink-500">Assign the next task above. New completions will also feed into the dashboard timeline.</p>
           </section>
         )}
 
