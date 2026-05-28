@@ -40,3 +40,9 @@ export async function sendMagicLink(formData: FormData): Promise<void> {
 
   redirect(`/auth/check-email?email=${encodeURIComponent(email)}`);
 }
+
+export async function logoutAction(): Promise<void> {
+  const supabase = await createServerClient();
+  await supabase.auth.signOut();
+  redirect("/auth?signed_out=1");
+}

@@ -92,6 +92,8 @@ type EmployeeRow = EmployeeFullRecord & {
   tenant_id: string;
 };
 
+type InviteResult = "invited" | "linked" | "conflict" | "failed";
+
 function requireTenant(actor: Actor): string {
   if (!actor.tenantId) {
     throw new Error("NO_TENANT_CONTEXT");
@@ -193,6 +195,18 @@ async function setEmployeeAuthMetadata(userId: string, tenantId: string): Promis
       ? (userData.user.app_metadata as Record<string, unknown>)
       : {};
 
+  const currentTenantId =
+    typeof currentAppMetadata.tenant_id === "string" ? currentAppMetadata.tenant_id : "";
+
+  if (currentTenantId && currentTenantId !== tenantId) {
+    console.error("EMPLOYEE_INVITE_TENANT_CONFLICT", {
+      userId,
+      existingTenantId: currentTenantId,
+      incomingTenantId: tenantId,
+    });
+    throw new Error("EMPLOYEE_INVITE_TENANT_CONFLICT");
+  }
+
   const { error: updateError } = await supabase.auth.admin.updateUserById(userId, {
     app_metadata: {
       ...currentAppMetadata,
@@ -203,10 +217,11 @@ async function setEmployeeAuthMetadata(userId: string, tenantId: string): Promis
 
   if (updateError) {
     console.error("EMPLOYEE_INVITE_METADATA_UPDATE_FAILED", updateError.message);
+    throw new Error("EMPLOYEE_INVITE_FAILED");
   }
 }
 
-async function inviteEmployeeAuthUser(email: string, tenantId: string): Promise<void> {
+async function inviteEmployeeAuthUser(email: string, tenantId: string): Promise<InviteResult> {
   const supabase = createServiceRoleClient();
   const { data, error } = await supabase.auth.admin.inviteUserByEmail(email, {
     data: {
@@ -219,19 +234,37 @@ async function inviteEmployeeAuthUser(email: string, tenantId: string): Promise<
   if (error) {
     if (!isAlreadyExistsAuthError(error)) {
       console.error("EMPLOYEE_INVITE_FAILED", error.message);
-      return;
+      return "failed";
     }
 
     const existingUserId = await findAuthUserIdByEmail(email);
     if (existingUserId) {
-      await setEmployeeAuthMetadata(existingUserId, tenantId);
+      try {
+        await setEmployeeAuthMetadata(existingUserId, tenantId);
+        return "linked";
+      } catch (inviteError) {
+        if (inviteError instanceof Error && inviteError.message === "EMPLOYEE_INVITE_TENANT_CONFLICT") {
+          return "conflict";
+        }
+        return "failed";
+      }
     }
-    return;
+    return "failed";
   }
 
   if (data?.user?.id) {
-    await setEmployeeAuthMetadata(data.user.id, tenantId);
+    try {
+      await setEmployeeAuthMetadata(data.user.id, tenantId);
+      return "linked";
+    } catch (inviteError) {
+      if (inviteError instanceof Error && inviteError.message === "EMPLOYEE_INVITE_TENANT_CONFLICT") {
+        return "conflict";
+      }
+      return "failed";
+    }
   }
+
+  return "invited";
 }
 
 async function rowExistsForTenant(
@@ -255,19 +288,64 @@ async function rowExistsForTenant(
   return Boolean(data);
 }
 
+async function rowStateForTenant(
+  actor: Actor,
+  employeeId: string,
+): Promise<"active" | "deleted" | "missing"> {
+  const tenantId = requireTenant(actor);
+  const supabase = createServiceRoleClient();
+  const { data, error } = await supabase
+    .from("employees")
+    .select("id, deleted_at")
+    .eq("tenant_id", tenantId)
+    .eq("id", employeeId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`EMPLOYEE_LOOKUP_FAILED: ${error.message}`);
+  }
+  const row = data as { id: string; deleted_at: string | null } | null;
+  if (!row) return "missing";
+  return row.deleted_at ? "deleted" : "active";
+}
+
+async function setEmployeeSetupStatus(
+  tenantId: string,
+  employeeId: string,
+  setupStatus: "incomplete" | "ready" | "active",
+): Promise<void> {
+  const supabase = createServiceRoleClient();
+  const { error } = await supabase
+    .from("employees")
+    .update({ setup_status: setupStatus } as never)
+    .eq("tenant_id", tenantId)
+    .eq("id", employeeId)
+    .is("deleted_at", null);
+  if (error) {
+    throw new Error(`EMPLOYEE_SETUP_STATUS_UPDATE_FAILED: ${error.message}`);
+  }
+}
+
 async function writeAudit(
   actor: Actor,
   actionType: string,
   targetId?: string,
+  required = false,
 ): Promise<void> {
   const tenantId = requireTenant(actor);
   const supabase = createServiceRoleClient();
-  await supabase.from("audit_logs").insert({
+  const { error } = await supabase.from("audit_logs").insert({
     tenant_id: tenantId,
     actor_user_id: actor.authUserId,
     action_type: actionType,
     target_id: targetId ?? null,
   } as never);
+  if (error) {
+    if (required) {
+      throw new Error(`AUDIT_LOG_FAILED: ${error.message}`);
+    }
+    console.error("AUDIT_LOG_WRITE_FAILED", error.message);
+  }
 }
 
 export async function listOrgChart(actor: Actor): Promise<OrgChartEmployee[]> {
@@ -348,10 +426,23 @@ export async function createEmployee(actor: Actor, input: unknown): Promise<Empl
 
   const created = data as unknown as EmployeeRow;
 
-  // Employee row creation is authoritative; auth invite is best-effort.
-  await inviteEmployeeAuthUser(created.email, tenantId);
+  const inviteResult = await inviteEmployeeAuthUser(created.email, tenantId);
+  if (inviteResult === "linked" || inviteResult === "invited") {
+    await setEmployeeSetupStatus(tenantId, created.id, "ready");
+    created.setup_status = "ready";
+  } else {
+    await setEmployeeSetupStatus(tenantId, created.id, "incomplete");
+    created.setup_status = "incomplete";
+  }
 
-  await writeAudit(actor, "employee.created", created.id);
+  await writeAudit(actor, "employee.created", created.id, true);
+
+  if (inviteResult === "conflict") {
+    throw new Error("EMPLOYEE_INVITE_TENANT_CONFLICT");
+  }
+  if (inviteResult === "failed") {
+    throw new Error("EMPLOYEE_INVITE_FAILED");
+  }
 
   // Fire activation event if this is the tenant's first employee.
   // The 'first_*' partial unique index also guards against duplicates.
@@ -411,7 +502,7 @@ export async function updateEmployee(
     throw new Error(exists ? "STALE_WRITE" : "NOT_FOUND");
   }
 
-  await writeAudit(actor, "employee.updated", employeeId);
+  await writeAudit(actor, "employee.updated", employeeId, true);
 
   return toEmployeeFullRecord(data as EmployeeRow);
 }
@@ -432,16 +523,26 @@ export async function softDeleteEmployee(
   }
 
   const supabase = createServiceRoleClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("employees")
     .update({ deleted_at: new Date().toISOString() } as never)
     .eq("tenant_id", tenantId)
     .eq("id", employeeId)
     .eq("updated_at", expectedUpdatedAt)
-    .is("deleted_at", null);
+    .is("deleted_at", null)
+    .select("id")
+    .maybeSingle();
 
   if (error) {
     throw new Error(`EMPLOYEE_DELETE_FAILED: ${error.message}`);
+  }
+
+  if (!data) {
+    const state = await rowStateForTenant(actor, employeeId);
+    if (state === "active") {
+      throw new Error("STALE_WRITE");
+    }
+    throw new Error("NOT_FOUND");
   }
 
   const exists = await rowExistsForTenant(actor, employeeId);
@@ -449,5 +550,40 @@ export async function softDeleteEmployee(
     throw new Error("STALE_WRITE");
   }
 
-  await writeAudit(actor, "employee.archived", employeeId);
+  await writeAudit(actor, "employee.archived", employeeId, true);
+}
+
+export async function reinviteEmployee(actor: Actor, employeeId: string): Promise<void> {
+  requireAdmin(actor);
+  const tenantId = requireTenant(actor);
+
+  const supabase = createServiceRoleClient();
+  const { data, error } = await supabase
+    .from("employees")
+    .select("id, email")
+    .eq("tenant_id", tenantId)
+    .eq("id", employeeId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`EMPLOYEE_FETCH_FAILED: ${error.message}`);
+  }
+  const employee = data as { id: string; email: string } | null;
+  if (!employee) {
+    throw new Error("NOT_FOUND");
+  }
+
+  const inviteResult = await inviteEmployeeAuthUser(employee.email, tenantId);
+  if (inviteResult === "linked" || inviteResult === "invited") {
+    await setEmployeeSetupStatus(tenantId, employeeId, "ready");
+    await writeAudit(actor, "employee.reinvited", employeeId, true);
+    return;
+  }
+
+  await setEmployeeSetupStatus(tenantId, employeeId, "incomplete");
+  if (inviteResult === "conflict") {
+    throw new Error("EMPLOYEE_INVITE_TENANT_CONFLICT");
+  }
+  throw new Error("EMPLOYEE_INVITE_FAILED");
 }

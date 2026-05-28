@@ -58,14 +58,14 @@ export async function GET(request: NextRequest) {
     if (process.env.NODE_ENV === "development") {
       console.warn(`[callback] supabase rejected the link: ${supabaseErr}`);
     }
-    return redirectTo(origin, "/auth?error=callback_failed", request, "all");
+    return redirectTo(origin, "/auth?error=callback_failed", request, "verifier");
   }
 
   if (!code && !tokenHash) {
     if (process.env.NODE_ENV === "development") {
       console.warn("[callback] no code, token_hash, or error in URL");
     }
-    return redirectTo(origin, "/auth?error=callback_failed", request, "all");
+    return redirectTo(origin, "/auth?error=callback_failed", request, "verifier");
   }
 
   if (process.env.NODE_ENV === "development") {
@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
     if (process.env.NODE_ENV === "development") {
       console.warn(`[callback] session exchange failed: ${error.message}`);
     }
-    return redirectTo(origin, "/auth?error=callback_failed", request, "all");
+    return redirectTo(origin, "/auth?error=callback_failed", request, "verifier");
   }
 
   const {
@@ -97,13 +97,12 @@ export async function GET(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return redirectTo(origin, "/auth?error=callback_failed", request, "all");
+    return redirectTo(origin, "/auth?error=callback_failed", request, "verifier");
   }
 
   const identity = await resolveIdentity(user.id);
   if (!identity.employeeId && identity.role !== "admin") {
-    await supabase.auth.signOut();
-    return redirectTo(origin, "/auth?error=not_authorized", request, "all");
+    return redirectTo(origin, "/auth?error=not_authorized", request, "verifier");
   }
 
   await track({

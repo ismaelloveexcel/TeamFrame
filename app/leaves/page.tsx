@@ -23,6 +23,7 @@ const ERROR_COPY: Record<string, string> = {
   INVALID_INPUT: "Check the dates and try again.",
   LEAVE_SUBMIT_FAILED: "Could not submit leave request.",
   LEAVE_DECISION_FAILED: "Could not record decision.",
+  AUDIT_LOG_FAILED: "Could not record required audit trail. No change was applied.",
   UNKNOWN: "Unexpected error. Please retry.",
 };
 

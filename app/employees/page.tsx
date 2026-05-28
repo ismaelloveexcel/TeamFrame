@@ -2,7 +2,12 @@ import { requireTenantActor } from "@/middleware/rbac";
 import { OrgChart } from "@/components/OrgChart";
 import { listEmployeesForAdmin, listOrgChart } from "@/services/employeeService";
 import Link from "next/link";
-import { createEmployeeAction, updateEmployeeAction, archiveEmployeeAction } from "./actions";
+import {
+  createEmployeeAction,
+  updateEmployeeAction,
+  archiveEmployeeAction,
+  reinviteEmployeeAction,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -10,16 +15,21 @@ const STATUS_COPY: Record<string, string> = {
   created: "Employee created.",
   updated: "Employee updated.",
   archived: "Employee archived.",
+  reinvited: "Invite link sent.",
 };
 
 const ERROR_COPY: Record<string, string> = {
   FORBIDDEN: "You do not have permission for that action.",
+  NOT_FOUND: "That employee could not be found.",
   STALE_WRITE: "That record changed. Refresh and try again.",
   MISSING_EXPECTED_UPDATED_AT: "Missing concurrency marker. Refresh and retry.",
   NO_PATCH_FIELDS: "No editable fields were provided.",
   EMPLOYEE_CREATE_FAILED: "Could not create employee.",
   EMPLOYEE_UPDATE_FAILED: "Could not update employee.",
   EMPLOYEE_DELETE_FAILED: "Could not archive employee.",
+  EMPLOYEE_INVITE_TENANT_CONFLICT: "Invite blocked: this email is already linked to another company.",
+  EMPLOYEE_INVITE_FAILED: "Employee saved, but invite delivery failed. Try Re-send invite.",
+  AUDIT_LOG_FAILED: "Could not record required audit trail. No change was applied.",
   INVALID_INPUT: "Input validation failed.",
   UNKNOWN: "Unexpected error. Please retry.",
 };
@@ -176,6 +186,9 @@ export default async function EmployeesPage({
                 <div>
                   <h3 className="text-[19px] font-medium tracking-tight">{employee.full_name}</h3>
                   <p className="text-[13px] text-ink-500">{employee.email}</p>
+                  <p className="mt-1 text-[12px] text-ink-500">
+                    Invite status: <span className="font-medium text-ink-700">{employee.setup_status}</span>
+                  </p>
                 </div>
                 <span className="text-[12px] tracking-[0.12em] text-ink-500">
                   {employee.status.replace("_", " ")}
@@ -222,6 +235,18 @@ export default async function EmployeesPage({
                   Archive employee
                 </button>
               </form>
+
+              {employee.setup_status === "incomplete" ? (
+                <form action={reinviteEmployeeAction} className="mt-2">
+                  <input type="hidden" name="employee_id" value={employee.id} />
+                  <button
+                    type="submit"
+                    className="text-[13px] text-ink-700 underline decoration-ink-300 underline-offset-4"
+                  >
+                    Re-send invite
+                  </button>
+                </form>
+              ) : null}
             </article>
           ))
         )}

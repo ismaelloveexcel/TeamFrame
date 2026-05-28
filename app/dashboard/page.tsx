@@ -1,29 +1,19 @@
 import Link from "next/link";
 import { requireTenantActor } from "@/middleware/rbac";
 import { listOrgChart } from "@/services/employeeService";
-import { listAllOnboardingTasks } from "@/services/onboardingService";
-import { listPendingLeavesWithEmployee } from "@/services/leaveService";
 import { listActivationEvents } from "@/services/activationService";
+import { logoutAction } from "@/app/auth/actions";
 
 export const dynamic = "force-dynamic";
 
 const ACTIVATION_EVENTS = [
-  { event: "first_employee_added", label: "Employee created" },
-  { event: "first_onboarding_assigned", label: "Onboarding assigned" },
-  { event: "first_onboarding_completed", label: "Onboarding completed" },
-  { event: "first_leave_requested", label: "Leave requested" },
-  { event: "first_leave_approved", label: "Leave approved" },
-  { event: "activation_completed", label: "Activation complete" },
+  { event: "first_employee_added" },
+  { event: "first_onboarding_assigned" },
+  { event: "first_onboarding_completed" },
+  { event: "first_leave_requested" },
+  { event: "first_leave_approved" },
+  { event: "activation_completed" },
 ] as const;
-
-function formatDuration(ms: number): string {
-  const hours = Math.floor(ms / (1000 * 60 * 60));
-  if (hours < 1) return "< 1 hour";
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  const remHours = hours % 24;
-  return remHours > 0 ? `${days}d ${remHours}h` : `${days}d`;
-}
 
 const SETUP_STEPS = [
   {
@@ -53,11 +43,7 @@ export default async function DashboardPage() {
   const actor = await requireTenantActor();
   const isAdmin = actor.role === "admin";
 
-  const [employees, onboardingTasks, pendingLeaves] = await Promise.all([
-    listOrgChart(actor),
-    actor.role === "admin" ? listAllOnboardingTasks(actor) : Promise.resolve([]),
-    actor.role === "admin" ? listPendingLeavesWithEmployee(actor) : Promise.resolve([]),
-  ]);
+  const employees = await listOrgChart(actor);
 
   const total = employees.length;
   const active = employees.filter((e) => e.status === "active").length;
@@ -80,40 +66,6 @@ export default async function DashboardPage() {
   // First-run: only the admin in the system and none of the setup steps completed yet
   const isFirstRun = total <= 1 && completedSteps === 0;
   const nextStep = SETUP_STEPS.find((s) => !firedEvents.has(s.event));
-
-  // Time to activation: delta from first_employee_added → activation_completed
-  const t0 = eventMap.get("first_employee_added");
-  const t1 = eventMap.get("activation_completed");
-  const timeToActivation =
-    t0 && t1 ? formatDuration(new Date(t1).getTime() - new Date(t0).getTime()) : null;
-
-  // Trust status — derived from already-fetched data, zero new queries
-  const allTimestamps = [...eventMap.values()].map((ts) => new Date(ts).getTime());
-  const latestEventAt =
-    allTimestamps.length > 0 ? new Date(Math.max(...allTimestamps)) : null;
-  const isEventFresh =
-    latestEventAt !== null &&
-    Date.now() - latestEventAt.getTime() < 24 * 60 * 60 * 1000;
-  const ACTIVATION_PREREQUISITES = [
-    "first_employee_added",
-    "first_onboarding_assigned",
-    "first_onboarding_completed",
-    "first_leave_requested",
-    "first_leave_approved",
-  ] as const;
-  const activationConsistencyOk =
-    !isActivated || ACTIVATION_PREREQUISITES.every((e) => firedEvents.has(e));
-
-  // Single deterministic invariant: activation_completed present, all prerequisites
-  // present, and exactly one activation_completed row exists for this tenant
-  const activationCompletedCount = (eventRows ?? []).filter(
-    (r: { event_name: string; created_at: string }) =>
-      r.event_name === "activation_completed",
-  ).length;
-  const systemConsistent =
-    isActivated &&
-    ACTIVATION_PREREQUISITES.every((e) => firedEvents.has(e)) &&
-    activationCompletedCount === 1;
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-14">
@@ -140,7 +92,7 @@ export default async function DashboardPage() {
           <p className="text-[12px] tracking-[0.14em] text-ink-500">Overview</p>
           <h1 className="text-[34px] leading-tight tracking-tight">Dashboard</h1>
         </div>
-        <form action="/auth/logout" method="post">
+        <form action={logoutAction}>
           <button
             type="submit"
             className="rounded-full border border-ink-300 px-4 py-1.5 text-[13px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900"

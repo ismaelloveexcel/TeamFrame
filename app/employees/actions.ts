@@ -3,7 +3,12 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireTenantActor } from "@/middleware/rbac";
-import { createEmployee, softDeleteEmployee, updateEmployee } from "@/services/employeeService";
+import {
+  createEmployee,
+  reinviteEmployee,
+  softDeleteEmployee,
+  updateEmployee,
+} from "@/services/employeeService";
 
 const CreateInputSchema = z.object({
   full_name: z.string().trim().min(1),
@@ -24,6 +29,10 @@ const UpdateInputSchema = z.object({
 const ArchiveInputSchema = z.object({
   employee_id: z.string().uuid(),
   expected_updated_at: z.string().trim().min(1),
+});
+
+const ReinviteInputSchema = z.object({
+  employee_id: z.string().uuid(),
 });
 
 function getErrorCode(error: unknown): string {
@@ -121,4 +130,27 @@ export async function archiveEmployeeAction(formData: FormData): Promise<void> {
   }
 
   redirect("/employees?status=archived");
+}
+
+export async function reinviteEmployeeAction(formData: FormData): Promise<void> {
+  let failed = false;
+  let errorCode = "UNKNOWN";
+
+  try {
+    const actor = await requireTenantActor();
+    const parsed = ReinviteInputSchema.parse({
+      employee_id: formData.get("employee_id"),
+    });
+
+    await reinviteEmployee(actor, parsed.employee_id);
+  } catch (error) {
+    failed = true;
+    errorCode = getErrorCode(error);
+  }
+
+  if (failed) {
+    redirect(`/employees?error=${encodeURIComponent(errorCode)}`);
+  }
+
+  redirect("/employees?status=reinvited");
 }

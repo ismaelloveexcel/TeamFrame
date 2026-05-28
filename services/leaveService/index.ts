@@ -8,6 +8,7 @@
  */
 
 import "server-only";
+import { z } from "zod";
 import type { Actor } from "@/middleware/rbac";
 import { createServiceRoleClient } from "@/lib/db/supabaseServer";
 import { track } from "@/lib/telemetry/track";
@@ -43,15 +44,33 @@ function requireLinkedEmployee(actor: Actor): string {
   return actor.employeeId;
 }
 
-async function writeAudit(actor: Actor, actionType: string, targetId?: string): Promise<void> {
+const SubmitLeaveSchema = z
+  .object({
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  })
+  .refine((d) => d.endDate >= d.startDate, { message: "INVALID_INPUT" });
+
+async function writeAudit(
+  actor: Actor,
+  actionType: string,
+  targetId?: string,
+  required = false,
+): Promise<void> {
   const tenantId = requireTenant(actor);
   const supabase = createServiceRoleClient();
-  await supabase.from("audit_logs").insert({
+  const { error } = await supabase.from("audit_logs").insert({
     tenant_id: tenantId,
     actor_user_id: actor.authUserId,
     action_type: actionType,
     target_id: targetId ?? null,
   } as never);
+  if (error) {
+    if (required) {
+      throw new Error(`AUDIT_LOG_FAILED: ${error.message}`);
+    }
+    console.error("AUDIT_LOG_WRITE_FAILED", error.message);
+  }
 }
 
 export async function listLeavesForEmployee(
@@ -118,6 +137,10 @@ export async function submitLeaveRequest(
 ): Promise<LeaveRecord> {
   const tenantId = requireTenant(actor);
   const employeeId = requireLinkedEmployee(actor);
+  const parsed = SubmitLeaveSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error("INVALID_INPUT");
+  }
 
   const supabase = createServiceRoleClient();
   const { data, error } = await supabase
@@ -125,8 +148,8 @@ export async function submitLeaveRequest(
     .insert({
       tenant_id: tenantId,
       employee_id: employeeId,
-      start_date: input.startDate,
-      end_date: input.endDate,
+      start_date: parsed.data.startDate,
+      end_date: parsed.data.endDate,
       status: "pending",
     } as never)
     .select("id, tenant_id, employee_id, start_date, end_date, status, created_at, updated_at")
@@ -168,6 +191,7 @@ export async function decideLeaveRequest(
     .update({ status: decision } as never)
     .eq("tenant_id", tenantId)
     .eq("id", leaveId)
+    .eq("status", "pending")
     .eq("updated_at", expectedUpdatedAt)
     .select("id, tenant_id, employee_id, start_date, end_date, status, created_at, updated_at")
     .maybeSingle();
@@ -179,7 +203,12 @@ export async function decideLeaveRequest(
     throw new Error("STALE_WRITE");
   }
 
-  await writeAudit(actor, decision === "approved" ? "leave.approved" : "leave.rejected", leaveId);
+  await writeAudit(
+    actor,
+    decision === "approved" ? "leave.approved" : "leave.rejected",
+    leaveId,
+    true,
+  );
 
   // Fire first_leave_approved once per tenant
   if (decision === "approved") {
