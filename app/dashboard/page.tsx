@@ -17,6 +17,42 @@ const ACTIVATION_EVENTS = [
   { event: "activation_completed" },
 ] as const;
 
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+  });
+}
+
+function timeAgo(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const diffHours = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60)));
+  if (diffHours < 1) return "updated just now";
+  if (diffHours < 24) return `updated ${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `updated ${diffDays}d ago`;
+}
+
+function QueueChip({
+  label,
+  tone,
+}: {
+  label: string;
+  tone: "warning" | "info" | "success";
+}) {
+  const tones = {
+    warning: "border-amber-200 bg-amber-50 text-amber-700",
+    info: "border-sky-200 bg-sky-50 text-sky-700",
+    success: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  } as const;
+
+  return (
+    <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${tones[tone]}`}>
+      {label}
+    </span>
+  );
+}
+
 const SETUP_STEPS = [
   {
     event: "first_employee_added",
@@ -74,6 +110,16 @@ export default async function DashboardPage() {
   ).length;
   const pendingLeaveCount = pendingLeaves.length;
   const onboardingNeedsAttention = onboardingTasks.filter((task) => task.status === "pending").length;
+  const pendingInviteEmployees = adminEmployees
+    .filter((e) => e.status !== "inactive" && e.setup_status === "incomplete")
+    .slice(0, 3);
+  const onboardingAttentionItems = onboardingTasks.filter((task) => task.status === "pending").slice(0, 3);
+  const employeeMap = new Map(adminEmployees.map((employee) => [employee.id, employee.full_name]));
+  const latestQueueUpdate = [
+    ...pendingInviteEmployees.map((employee) => employee.updated_at),
+    ...pendingLeaves.map((leave) => leave.updated_at),
+    ...onboardingAttentionItems.map((task) => task.updated_at),
+  ].sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] ?? null;
 
   const eventMap = new Map(
     eventRows.map((r) => [r.event_name, r.created_at]),
@@ -262,44 +308,127 @@ export default async function DashboardPage() {
 
           {isAdmin ? (
             <section className="mt-6 rounded-xl border border-ink-300/70 bg-white/80 p-5">
-              <div className="flex flex-wrap items-end justify-between gap-3">
+              <div className="flex flex-wrap items-end justify-between gap-3 border-b border-ink-300/60 pb-4">
                 <div>
-                  <h2 className="text-[19px] font-medium tracking-tight">Operations at a glance</h2>
-                  <p className="mt-1 text-[14px] text-ink-500">Prioritize the queues that unblock your team fastest.</p>
+                  <p className="text-[12px] tracking-[0.14em] text-ink-500">Needs attention</p>
+                  <h2 className="text-[19px] font-medium tracking-tight">Manager action center</h2>
+                  <p className="mt-1 text-[14px] text-ink-500">Start with the queues blocking activation and day-to-day approvals.</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-[12px] text-ink-500">
+                  <QueueChip
+                    label={pendingInvites > 0 || pendingLeaveCount > 0 || onboardingNeedsAttention > 0 ? "Action needed" : "Up to date"}
+                    tone={pendingInvites > 0 || pendingLeaveCount > 0 || onboardingNeedsAttention > 0 ? "warning" : "success"}
+                  />
+                  <span>{latestQueueUpdate ? timeAgo(latestQueueUpdate) : "No recent queue activity"}</span>
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+              <div className="mt-5 flex flex-wrap gap-3">
+                <Link
+                  href="/employees"
+                  className="inline-flex rounded-full bg-ink-900 px-4 py-2 text-[13px] font-medium text-paper transition hover:bg-ink-700"
+                >
+                  Invite employee
+                </Link>
+                <Link
+                  href="/onboarding"
+                  className="inline-flex rounded-full border border-ink-300 px-4 py-2 text-[13px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900"
+                >
+                  Review onboarding
+                </Link>
+                <Link
+                  href="/leaves"
+                  className="inline-flex rounded-full border border-ink-300 px-4 py-2 text-[13px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900"
+                >
+                  Review leave requests
+                </Link>
+              </div>
+
+              <div className="mt-5 grid gap-4 lg:grid-cols-3">
                 <article className="rounded-lg border border-ink-300/70 bg-white p-4">
-                  <p className="text-[12px] text-ink-500">Pending invites</p>
-                  <p className="mt-2 text-[24px] tracking-tight">{pendingInvites}</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[12px] text-ink-500">Pending invites</p>
+                      <p className="mt-2 text-[24px] tracking-tight">{pendingInvites}</p>
+                    </div>
+                    <QueueChip label={pendingInvites > 0 ? "Needs follow-up" : "Clear"} tone={pendingInvites > 0 ? "warning" : "success"} />
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {pendingInviteEmployees.length > 0 ? (
+                      pendingInviteEmployees.map((employee) => (
+                        <div key={employee.id} className="rounded-md border border-ink-200 bg-ink-50/60 px-3 py-2">
+                          <p className="text-[13px] font-medium text-ink-900">{employee.full_name}</p>
+                          <p className="text-[12px] text-ink-500">Invite pending since {formatDate(employee.updated_at)}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-[13px] text-ink-500">No team members are waiting on an invite right now.</p>
+                    )}
+                  </div>
                   <Link
                     href="/employees"
-                    className="mt-2 inline-flex rounded-full bg-ink-900 px-3 py-1 text-[12px] font-medium text-paper transition hover:bg-ink-700"
+                    className="mt-4 inline-flex rounded-full bg-ink-900 px-3 py-1 text-[12px] font-medium text-paper transition hover:bg-ink-700"
                   >
-                    Review invites
+                    Open employee queue
                   </Link>
                 </article>
 
                 <article className="rounded-lg border border-ink-300/70 bg-white p-4">
-                  <p className="text-[12px] text-ink-500">Pending leave requests</p>
-                  <p className="mt-2 text-[24px] tracking-tight">{pendingLeaveCount}</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[12px] text-ink-500">Pending leave approvals</p>
+                      <p className="mt-2 text-[24px] tracking-tight">{pendingLeaveCount}</p>
+                    </div>
+                    <QueueChip label={pendingLeaveCount > 0 ? "Waiting" : "Clear"} tone={pendingLeaveCount > 0 ? "info" : "success"} />
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {pendingLeaves.slice(0, 3).map((leave) => (
+                      <div key={leave.id} className="rounded-md border border-ink-200 bg-ink-50/60 px-3 py-2">
+                        <p className="text-[13px] font-medium text-ink-900">{leave.employee_full_name}</p>
+                        <p className="text-[12px] text-ink-500">
+                          {formatDate(leave.start_date)} to {formatDate(leave.end_date)} · requested {formatDate(leave.created_at)}
+                        </p>
+                      </div>
+                    ))}
+                    {pendingLeaves.length === 0 ? (
+                      <p className="text-[13px] text-ink-500">No leave approvals are waiting for you.</p>
+                    ) : null}
+                  </div>
                   <Link
                     href="/leaves"
-                    className="mt-2 inline-flex rounded-full bg-ink-900 px-3 py-1 text-[12px] font-medium text-paper transition hover:bg-ink-700"
+                    className="mt-4 inline-flex rounded-full bg-ink-900 px-3 py-1 text-[12px] font-medium text-paper transition hover:bg-ink-700"
                   >
-                    Review leave
+                    Open leave queue
                   </Link>
                 </article>
 
                 <article className="rounded-lg border border-ink-300/70 bg-white p-4">
-                  <p className="text-[12px] text-ink-500">Onboarding tasks needing action</p>
-                  <p className="mt-2 text-[24px] tracking-tight">{onboardingNeedsAttention}</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[12px] text-ink-500">Incomplete onboarding</p>
+                      <p className="mt-2 text-[24px] tracking-tight">{onboardingNeedsAttention}</p>
+                    </div>
+                    <QueueChip label={onboardingNeedsAttention > 0 ? "In progress" : "Clear"} tone={onboardingNeedsAttention > 0 ? "warning" : "success"} />
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {onboardingAttentionItems.length > 0 ? (
+                      onboardingAttentionItems.map((task) => (
+                        <div key={task.id} className="rounded-md border border-ink-200 bg-ink-50/60 px-3 py-2">
+                          <p className="text-[13px] font-medium text-ink-900">{task.title}</p>
+                          <p className="text-[12px] text-ink-500">
+                            {employeeMap.get(task.employee_id) ?? "Employee"} · added {formatDate(task.created_at)}
+                          </p>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-[13px] text-ink-500">No onboarding tasks are stalled right now.</p>
+                    )}
+                  </div>
                   <Link
                     href="/onboarding"
-                    className="mt-2 inline-flex rounded-full bg-ink-900 px-3 py-1 text-[12px] font-medium text-paper transition hover:bg-ink-700"
+                    className="mt-4 inline-flex rounded-full bg-ink-900 px-3 py-1 text-[12px] font-medium text-paper transition hover:bg-ink-700"
                   >
-                    Open onboarding
+                    Open onboarding queue
                   </Link>
                 </article>
               </div>
