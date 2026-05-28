@@ -42,7 +42,7 @@ export async function resolveIdentity(authUserId: string): Promise<ResolvedIdent
 
   const { data: linkedEmployeeData, error: linkedEmpErr } = await supabase
     .from("employees")
-    .select("id, tenant_id, auth_user_id")
+    .select("id, tenant_id, auth_user_id, setup_status")
     .eq("auth_user_id", data.user.id)
     .is("deleted_at", null)
     .maybeSingle();
@@ -52,13 +52,18 @@ export async function resolveIdentity(authUserId: string): Promise<ResolvedIdent
   }
 
   let employee = linkedEmployeeData as
-    | { id: string; tenant_id: string; auth_user_id: string | null }
+    | {
+        id: string;
+        tenant_id: string;
+        auth_user_id: string | null;
+        setup_status: "incomplete" | "ready" | "active";
+      }
     | null;
 
   if (!employee) {
     const { data: employeeByEmail, error: empErr } = await supabase
       .from("employees")
-      .select("id, tenant_id, auth_user_id")
+      .select("id, tenant_id, auth_user_id, setup_status")
       .eq("email", email)
       .is("deleted_at", null)
       .limit(2);
@@ -70,7 +75,12 @@ export async function resolveIdentity(authUserId: string): Promise<ResolvedIdent
       throw new Error("RBAC: ambiguous employee mapping for this email");
     }
     employee = (employeeByEmail?.[0] as
-      | { id: string; tenant_id: string; auth_user_id: string | null }
+      | {
+          id: string;
+          tenant_id: string;
+          auth_user_id: string | null;
+          setup_status: "incomplete" | "ready" | "active";
+        }
       | undefined) ?? null;
   }
 
@@ -81,6 +91,34 @@ export async function resolveIdentity(authUserId: string): Promise<ResolvedIdent
       .update({ auth_user_id: data.user.id } as never)
       .eq("id", employee.id)
       .is("auth_user_id", null);
+  }
+
+  if (employee && employee.setup_status !== "active") {
+    const { error: markActiveError } = await supabase
+      .from("employees")
+      .update({
+        setup_status: "active",
+        activated_at: new Date().toISOString(),
+        invite_last_error: null,
+      } as never)
+      .eq("id", employee.id)
+      .eq("tenant_id", employee.tenant_id)
+      .is("deleted_at", null);
+
+    if (markActiveError) {
+      const message = markActiveError.message.toLowerCase();
+      if (
+        message.includes("activated_at") ||
+        message.includes("invite_last_error")
+      ) {
+        await supabase
+          .from("employees")
+          .update({ setup_status: "active" } as never)
+          .eq("id", employee.id)
+          .eq("tenant_id", employee.tenant_id)
+          .is("deleted_at", null);
+      }
+    }
   }
 
   return {

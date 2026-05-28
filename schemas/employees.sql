@@ -24,6 +24,11 @@ create table if not exists employees (
   status          employee_status        not null default 'active',
   grade           text,
   setup_status    employee_setup_status  not null default 'incomplete',
+  invite_attempt_count integer not null default 0,
+  invite_last_attempt_at timestamptz,
+  invite_last_sent_at timestamptz,
+  invite_last_error text,
+  activated_at timestamptz,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
   deleted_at      timestamptz
@@ -32,6 +37,11 @@ create table if not exists employees (
 alter table employees add column if not exists tenant_id uuid;
 alter table employees add column if not exists auth_user_id uuid;
 alter table employees add column if not exists updated_at timestamptz not null default now();
+alter table employees add column if not exists invite_attempt_count integer not null default 0;
+alter table employees add column if not exists invite_last_attempt_at timestamptz;
+alter table employees add column if not exists invite_last_sent_at timestamptz;
+alter table employees add column if not exists invite_last_error text;
+alter table employees add column if not exists activated_at timestamptz;
 
 update employees
 set tenant_id = '00000000-0000-0000-0000-000000000001'

@@ -6,7 +6,7 @@ import { listActivationEvents, listRecentAuditActivity } from "@/services/activa
 import { listPendingLeavesWithEmployee } from "@/services/leaveService";
 import { listAllOnboardingTasks } from "@/services/onboardingService";
 import { logoutAction } from "@/app/auth/actions";
-import { reinviteEmployeeAction, archiveEmployeeAction } from "@/app/employees/actions";
+import { reinviteEmployeeAction, archiveEmployeeAction, generateActivationLinkAction } from "@/app/employees/actions";
 import { decideLeaveAction } from "@/app/leaves/actions";
 
 export const dynamic = "force-dynamic";
@@ -117,6 +117,7 @@ const STATUS_COPY: Record<string, string> = {
   reinvited: "Invite re-sent from the action center.",
   archived: "Employee archived from the action center.",
   decided: "Leave decision recorded.",
+  activation_link_ready: "Activation link generated from the action center.",
 };
 
 const DECISION_COPY: Record<string, string> = {
@@ -135,6 +136,8 @@ const ERROR_COPY: Record<string, string> = {
   EMPLOYEE_INVITE_PROVIDER_CONFIG: "Invite provider is not configured correctly. Verify email provider settings.",
   EMPLOYEE_INVITE_USER_LOOKUP_FAILED: "Invite user lookup failed. Retry from the queue.",
   EMPLOYEE_INVITE_METADATA_FAILED: "Invite metadata sync failed. Retry from the queue.",
+  EMPLOYEE_ACTIVATION_LINK_FAILED: "Could not generate activation link. Retry from the queue.",
+  EMPLOYEE_ALREADY_ACTIVE: "This employee is already active.",
   EMPLOYEE_DELETE_FAILED: "Could not archive employee.",
   LEAVE_DECISION_FAILED: "Could not record leave decision.",
   AUDIT_LOG_FAILED: "Required audit logging failed, so no change was applied.",
@@ -145,11 +148,18 @@ const ERROR_COPY: Record<string, string> = {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; error?: string; employee?: string; leave?: string; decision?: string }>;
+  searchParams: Promise<{
+    status?: string;
+    error?: string;
+    employee?: string;
+    leave?: string;
+    decision?: string;
+    activation_link?: string;
+  }>;
 }) {
   const actor = await requireTenantActor();
   const isAdmin = actor.role === "admin";
-  const { status, error, employee: employeeParam, leave: leaveParam, decision } = await searchParams;
+  const { status, error, employee: employeeParam, leave: leaveParam, decision, activation_link: activationLink } = await searchParams;
 
   const [orgEmployees, adminEmployees, pendingLeaves, onboardingTasks, eventRows] = await Promise.all([
     isAdmin ? Promise.resolve([]) : listOrgChart(actor),
@@ -505,6 +515,11 @@ export default async function DashboardPage({
                               Employee archived.
                             </p>
                           ) : null}
+                          {status === "activation_link_ready" && employeeParam === employee.id && activationLink ? (
+                            <p className="mb-2 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[12px] text-emerald-700">
+                              Activation link generated. Open it from Employees for copy/share.
+                            </p>
+                          ) : null}
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <p className="text-[13px] font-medium text-ink-900">{employee.full_name}</p>
@@ -532,6 +547,15 @@ export default async function DashboardPage({
                               <PendingSubmitButton
                                 idleLabel="Archive"
                                 pendingLabel="Archiving..."
+                                className="rounded-full border border-ink-300 px-3 py-1.5 text-[12px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-400"
+                              />
+                            </form>
+                            <form action={generateActivationLinkAction}>
+                              <input type="hidden" name="employee_id" value={employee.id} />
+                              <input type="hidden" name="return_to" value="/dashboard" />
+                              <PendingSubmitButton
+                                idleLabel="Generate link"
+                                pendingLabel="Generating..."
                                 className="rounded-full border border-ink-300 px-3 py-1.5 text-[12px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-400"
                               />
                             </form>

@@ -19,6 +19,12 @@ const DecideSchema = z.object({
   return_to: z.string().trim().optional(),
 });
 
+function optionalString(value: FormDataEntryValue | null): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 function safeReturnPath(path: string | undefined, fallback: string): string {
   if (!path || !path.startsWith("/") || path.startsWith("//")) {
     return fallback;
@@ -73,7 +79,7 @@ export async function decideLeaveAction(formData: FormData): Promise<void> {
       leave_id: formData.get("leave_id"),
       expected_updated_at: formData.get("expected_updated_at"),
       decision: formData.get("decision"),
-      return_to: formData.get("return_to"),
+      return_to: optionalString(formData.get("return_to")),
     });
     leaveId = parsed.leave_id;
     decision = parsed.decision;

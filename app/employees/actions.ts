@@ -5,6 +5,7 @@ import { z } from "zod";
 import { requireTenantActor } from "@/middleware/rbac";
 import {
   createEmployee,
+  generateEmployeeActivationLink,
   reinviteEmployee,
   softDeleteEmployee,
   updateEmployee,
@@ -37,11 +38,22 @@ const ReinviteInputSchema = z.object({
   return_to: z.string().trim().optional(),
 });
 
+const ActivationLinkInputSchema = z.object({
+  employee_id: z.string().uuid(),
+  return_to: z.string().trim().optional(),
+});
+
 function safeReturnPath(path: string | undefined, fallback: string): string {
   if (!path || !path.startsWith("/") || path.startsWith("//")) {
     return fallback;
   }
   return path;
+}
+
+function optionalString(value: FormDataEntryValue | null): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function getErrorCode(error: unknown): string {
@@ -128,7 +140,7 @@ export async function archiveEmployeeAction(formData: FormData): Promise<void> {
     const parsed = ArchiveInputSchema.parse({
       employee_id: formData.get("employee_id"),
       expected_updated_at: formData.get("expected_updated_at"),
-      return_to: formData.get("return_to"),
+      return_to: optionalString(formData.get("return_to")),
     });
     employeeId = parsed.employee_id;
     returnTo = safeReturnPath(parsed.return_to, "/employees");
@@ -156,7 +168,7 @@ export async function reinviteEmployeeAction(formData: FormData): Promise<void> 
     const actor = await requireTenantActor();
     const parsed = ReinviteInputSchema.parse({
       employee_id: formData.get("employee_id"),
-      return_to: formData.get("return_to"),
+      return_to: optionalString(formData.get("return_to")),
     });
     employeeId = parsed.employee_id;
     returnTo = safeReturnPath(parsed.return_to, "/employees");
@@ -172,4 +184,36 @@ export async function reinviteEmployeeAction(formData: FormData): Promise<void> 
   }
 
   redirect(`${returnTo}?status=reinvited&employee=${encodeURIComponent(employeeId)}`);
+}
+
+export async function generateActivationLinkAction(formData: FormData): Promise<void> {
+  let failed = false;
+  let errorCode = "UNKNOWN";
+  let employeeId = "";
+  let returnTo = "/employees";
+  let activationLink = "";
+
+  try {
+    const actor = await requireTenantActor();
+    const parsed = ActivationLinkInputSchema.parse({
+      employee_id: formData.get("employee_id"),
+      return_to: optionalString(formData.get("return_to")),
+    });
+    employeeId = parsed.employee_id;
+    returnTo = safeReturnPath(parsed.return_to, "/employees");
+
+    const result = await generateEmployeeActivationLink(actor, parsed.employee_id);
+    activationLink = result.activationLink;
+  } catch (error) {
+    failed = true;
+    errorCode = getErrorCode(error);
+  }
+
+  if (failed) {
+    redirect(`${returnTo}?error=${encodeURIComponent(errorCode)}&employee=${encodeURIComponent(employeeId)}`);
+  }
+
+  redirect(
+    `${returnTo}?status=activation_link_ready&employee=${encodeURIComponent(employeeId)}&activation_link=${encodeURIComponent(activationLink)}`,
+  );
 }

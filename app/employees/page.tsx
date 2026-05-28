@@ -6,6 +6,7 @@ import Link from "next/link";
 import { CopyInviteEmailButton } from "./CopyInviteEmailButton";
 import {
   createEmployeeAction,
+  generateActivationLinkAction,
   updateEmployeeAction,
   archiveEmployeeAction,
   reinviteEmployeeAction,
@@ -18,6 +19,7 @@ const STATUS_COPY: Record<string, string> = {
   updated: "Employee updated.",
   archived: "Employee archived.",
   reinvited: "Invite link sent. The employee should use the newest email only.",
+  activation_link_ready: "Activation link generated.",
 };
 
 const ERROR_COPY: Record<string, string> = {
@@ -36,18 +38,36 @@ const ERROR_COPY: Record<string, string> = {
   EMPLOYEE_INVITE_PROVIDER_CONFIG: "Invite provider is not fully configured. Ask an admin to check Supabase email settings.",
   EMPLOYEE_INVITE_USER_LOOKUP_FAILED: "Invite could not be linked to an existing auth user. Re-send invite.",
   EMPLOYEE_INVITE_METADATA_FAILED: "Invite was sent but metadata sync failed. Re-send invite.",
+  EMPLOYEE_ACTIVATION_LINK_FAILED: "Could not generate an activation link. Re-send invite and retry.",
+  EMPLOYEE_ALREADY_ACTIVE: "This employee is already activated.",
   AUDIT_LOG_FAILED: "Could not record required audit trail. No change was applied.",
   INVALID_INPUT: "Input validation failed.",
   UNKNOWN: "Something went wrong. Refresh and try again.",
 };
 
+function isInviteExpired(lastSentAt: string | null): boolean {
+  if (!lastSentAt) return false;
+  const ageMs = Date.now() - new Date(lastSentAt).getTime();
+  return ageMs > 1000 * 60 * 60 * 24 * 2;
+}
+
+function formatDateTime(iso: string | null): string {
+  if (!iso) return "-";
+  return new Date(iso).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default async function EmployeesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; error?: string; employee?: string }>;
+  searchParams: Promise<{ status?: string; error?: string; employee?: string; activation_link?: string }>;
 }) {
   const actor = await requireTenantActor();
-  const { status, error, employee: employeeParam } = await searchParams;
+  const { status, error, employee: employeeParam, activation_link: activationLink } = await searchParams;
 
   const successMessage = status ? (STATUS_COPY[status] ?? null) : null;
   const errorMessage = error ? (ERROR_COPY[error] ?? ERROR_COPY.UNKNOWN) : null;
@@ -86,7 +106,7 @@ export default async function EmployeesPage({
   const archived = employees.filter((e) => e.status === "inactive").length;
 
   function inviteState(employeeRecord: (typeof employees)[number]): {
-    label: "pending" | "invited" | "active" | "archived" | "retry";
+    label: "pending" | "awaiting" | "activated" | "archived" | "failed" | "expired";
     tone: string;
     help: string;
   } {
@@ -99,29 +119,38 @@ export default async function EmployeesPage({
     }
     if (employeeRecord.setup_status === "active") {
       return {
-        label: "active",
+        label: "activated",
         tone: "border-emerald-200 bg-emerald-50 text-emerald-700",
-        help: "Invite accepted and employee can access TeamFrame.",
+        help: employeeRecord.activated_at
+          ? `Activated on ${formatDateTime(employeeRecord.activated_at)}.`
+          : "Invite accepted and employee can access TeamFrame.",
+      };
+    }
+    if (employeeRecord.invite_last_error) {
+      return {
+        label: "failed",
+        tone: "border-red-200 bg-red-50 text-red-700",
+        help: `Last invite error: ${employeeRecord.invite_last_error}. Use Re-send invite or generate a new activation link.`,
+      };
+    }
+    if (isInviteExpired(employeeRecord.invite_last_sent_at)) {
+      return {
+        label: "expired",
+        tone: "border-amber-200 bg-amber-50 text-amber-700",
+        help: "Last invite may have expired. Re-send or generate a fresh activation link.",
       };
     }
     if (employeeRecord.setup_status === "ready") {
       return {
-        label: "invited",
+        label: "awaiting",
         tone: "border-sky-200 bg-sky-50 text-sky-700",
-        help: "Invite email was sent. Waiting for first sign-in.",
-      };
-    }
-    if (error === "EMPLOYEE_INVITE_FAILED" && employeeParam === employeeRecord.id) {
-      return {
-        label: "retry",
-        tone: "border-red-200 bg-red-50 text-red-700",
-        help: "Latest invite delivery failed. Use Re-send invite.",
+        help: "Invite sent and waiting for first login.",
       };
     }
     return {
       label: "pending",
       tone: "border-amber-200 bg-amber-50 text-amber-700",
-      help: "Invite not accepted yet. You can re-send from this card.",
+      help: "No successful invite yet. Send or generate an activation link from this card.",
     };
   }
 
@@ -233,6 +262,27 @@ export default async function EmployeesPage({
                   Invite re-sent to this employee.
                 </p>
               ) : null}
+              {status === "activation_link_ready" && employeeParam === employee.id && activationLink ? (
+                <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-[13px] text-emerald-700">
+                  <p>Activation link generated for this employee.</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <a
+                      href={activationLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[12px] underline decoration-emerald-300 underline-offset-4"
+                    >
+                      Open activation link
+                    </a>
+                    <CopyInviteEmailButton
+                      email={activationLink}
+                      copyValue={activationLink}
+                      idleLabel="Copy activation link"
+                      copiedLabel="Activation link copied"
+                    />
+                  </div>
+                </div>
+              ) : null}
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-[19px] font-medium tracking-tight">{employee.full_name}</h3>
@@ -285,17 +335,34 @@ export default async function EmployeesPage({
                 />
               </form>
 
+              <div className="mt-3 rounded-md border border-ink-200 bg-ink-50/50 px-3 py-2 text-[12px] text-ink-600">
+                <p>Invite attempts: {employee.invite_attempt_count}</p>
+                <p>Last attempt: {formatDateTime(employee.invite_last_attempt_at)}</p>
+                <p>Last sent: {formatDateTime(employee.invite_last_sent_at)}</p>
+                <p>Activation: {formatDateTime(employee.activated_at)}</p>
+              </div>
+
               <div className="mt-3 flex flex-wrap items-center gap-4">
                 <CopyInviteEmailButton email={employee.email} />
                 {employee.setup_status !== "active" && employee.status !== "inactive" ? (
-                  <form action={reinviteEmployeeAction}>
-                    <input type="hidden" name="employee_id" value={employee.id} />
-                    <PendingSubmitButton
-                      idleLabel="Re-send invite"
-                      pendingLabel="Sending..."
-                      className="rounded-full border border-ink-300 px-3 py-1 text-[12px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-400"
-                    />
-                  </form>
+                  <>
+                    <form action={reinviteEmployeeAction}>
+                      <input type="hidden" name="employee_id" value={employee.id} />
+                      <PendingSubmitButton
+                        idleLabel="Re-send invite"
+                        pendingLabel="Sending..."
+                        className="rounded-full border border-ink-300 px-3 py-1 text-[12px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-400"
+                      />
+                    </form>
+                    <form action={generateActivationLinkAction}>
+                      <input type="hidden" name="employee_id" value={employee.id} />
+                      <PendingSubmitButton
+                        idleLabel="Generate activation link"
+                        pendingLabel="Generating..."
+                        className="rounded-full border border-ink-300 px-3 py-1 text-[12px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-400"
+                      />
+                    </form>
+                  </>
                 ) : null}
                 <form action={archiveEmployeeAction}>
                   <input type="hidden" name="employee_id" value={employee.id} />

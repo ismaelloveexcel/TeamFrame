@@ -15,6 +15,7 @@ import "server-only";
 import { z } from "zod";
 import type { Actor } from "@/middleware/rbac";
 import { createServiceRoleClient } from "@/lib/db/supabaseServer";
+import { env } from "@/lib/db/env";
 import { track } from "@/lib/telemetry/track";
 import { maybeFireActivationCompleted } from "@/services/onboardingService";
 
@@ -41,8 +42,17 @@ export type EmployeeFullRecord = OrgChartEmployee & {
   timezone: string;
   grade: string | null;
   setup_status: "incomplete" | "ready" | "active";
+  invite_attempt_count: number;
+  invite_last_attempt_at: string | null;
+  invite_last_sent_at: string | null;
+  invite_last_error: string | null;
+  activated_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type ActivationLinkResult = {
+  activationLink: string;
 };
 
 export async function listEmployeesForAdmin(actor: Actor): Promise<EmployeeFullRecord[]> {
@@ -134,6 +144,14 @@ function toOrgChartEmployee(row: EmployeeRow): OrgChartEmployee {
 }
 
 function toEmployeeFullRecord(row: EmployeeRow): EmployeeFullRecord {
+  const maybeTelemetry = row as EmployeeRow & {
+    invite_attempt_count?: number;
+    invite_last_attempt_at?: string | null;
+    invite_last_sent_at?: string | null;
+    invite_last_error?: string | null;
+    activated_at?: string | null;
+  };
+
   return {
     id: row.id,
     full_name: row.full_name,
@@ -145,6 +163,11 @@ function toEmployeeFullRecord(row: EmployeeRow): EmployeeFullRecord {
     timezone: row.timezone,
     grade: row.grade,
     setup_status: row.setup_status,
+    invite_attempt_count: maybeTelemetry.invite_attempt_count ?? 0,
+    invite_last_attempt_at: maybeTelemetry.invite_last_attempt_at ?? null,
+    invite_last_sent_at: maybeTelemetry.invite_last_sent_at ?? null,
+    invite_last_error: maybeTelemetry.invite_last_error ?? null,
+    activated_at: maybeTelemetry.activated_at ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -213,6 +236,16 @@ function mapInviteFailureToErrorCode(category: InviteFailureCategory): string {
   if (category === "user_lookup_failed") return "EMPLOYEE_INVITE_USER_LOOKUP_FAILED";
   if (category === "metadata_failed") return "EMPLOYEE_INVITE_METADATA_FAILED";
   return "EMPLOYEE_INVITE_FAILED";
+}
+
+function isInviteTelemetryColumnMissing(message: string): boolean {
+  return (
+    message.includes("invite_attempt_count") ||
+    message.includes("invite_last_attempt_at") ||
+    message.includes("invite_last_sent_at") ||
+    message.includes("invite_last_error") ||
+    message.includes("activated_at")
+  );
 }
 
 function logInviteDiagnostic(payload: {
@@ -330,7 +363,7 @@ async function inviteEmployeeAuthUser(email: string, tenantId: string): Promise<
       role: "employee",
       tenant_id: tenantId,
     },
-    redirectTo: `${process.env.SITE_URL}/auth/callback`,
+    redirectTo: `${env.siteUrl}/auth/callback`,
   });
 
   if (error) {
@@ -449,6 +482,56 @@ async function setEmployeeSetupStatus(
   }
 }
 
+async function recordInviteTelemetry(
+  tenantId: string,
+  employeeId: string,
+  input: {
+    succeeded: boolean;
+    failureCode?: string;
+  },
+): Promise<void> {
+  const supabase = createServiceRoleClient();
+  const { data: existing, error: lookupError } = await supabase
+    .from("employees")
+    .select("invite_attempt_count")
+    .eq("tenant_id", tenantId)
+    .eq("id", employeeId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (lookupError) {
+    if (isInviteTelemetryColumnMissing(lookupError.message)) {
+      console.warn("EMPLOYEE_INVITE_TELEMETRY_UNAVAILABLE", lookupError.message);
+      return;
+    }
+    throw new Error(`EMPLOYEE_INVITE_TELEMETRY_LOOKUP_FAILED: ${lookupError.message}`);
+  }
+
+  const telemetryRow = existing as { invite_attempt_count?: number | null } | null;
+  const nextCount =
+    typeof telemetryRow?.invite_attempt_count === "number" ? telemetryRow.invite_attempt_count + 1 : 1;
+  const timestamp = new Date().toISOString();
+  const { error: updateError } = await supabase
+    .from("employees")
+    .update({
+      invite_attempt_count: nextCount,
+      invite_last_attempt_at: timestamp,
+      invite_last_sent_at: input.succeeded ? timestamp : null,
+      invite_last_error: input.succeeded ? null : input.failureCode ?? "EMPLOYEE_INVITE_FAILED",
+    } as never)
+    .eq("tenant_id", tenantId)
+    .eq("id", employeeId)
+    .is("deleted_at", null);
+
+  if (updateError) {
+    if (isInviteTelemetryColumnMissing(updateError.message)) {
+      console.warn("EMPLOYEE_INVITE_TELEMETRY_UNAVAILABLE", updateError.message);
+      return;
+    }
+    throw new Error(`EMPLOYEE_INVITE_TELEMETRY_UPDATE_FAILED: ${updateError.message}`);
+  }
+}
+
 async function writeAudit(
   actor: Actor,
   actionType: string,
@@ -552,10 +635,17 @@ export async function createEmployee(actor: Actor, input: unknown): Promise<Empl
   const inviteResult = await inviteEmployeeAuthUser(created.email, tenantId);
   if (inviteResult.status === "linked" || inviteResult.status === "invited") {
     await setEmployeeSetupStatus(tenantId, created.id, "ready");
+    await recordInviteTelemetry(tenantId, created.id, { succeeded: true });
     created.setup_status = "ready";
+    created.invite_last_error = null;
   } else {
     await setEmployeeSetupStatus(tenantId, created.id, "incomplete");
+    await recordInviteTelemetry(tenantId, created.id, {
+      succeeded: false,
+      failureCode: mapInviteFailureToErrorCode(inviteResult.category ?? "unknown"),
+    });
     created.setup_status = "incomplete";
+    created.invite_last_error = mapInviteFailureToErrorCode(inviteResult.category ?? "unknown");
   }
 
   logInviteDiagnostic({
@@ -712,6 +802,7 @@ export async function reinviteEmployee(actor: Actor, employeeId: string): Promis
   const inviteResult = await inviteEmployeeAuthUser(employee.email, tenantId);
   if (inviteResult.status === "linked" || inviteResult.status === "invited") {
     await setEmployeeSetupStatus(tenantId, employeeId, "ready");
+    await recordInviteTelemetry(tenantId, employeeId, { succeeded: true });
     await writeAudit(actor, "employee.reinvited", employeeId, true);
     logInviteDiagnostic({
       operation: "reinvite",
@@ -728,6 +819,10 @@ export async function reinviteEmployee(actor: Actor, employeeId: string): Promis
   }
 
   await setEmployeeSetupStatus(tenantId, employeeId, "incomplete");
+  await recordInviteTelemetry(tenantId, employeeId, {
+    succeeded: false,
+    failureCode: mapInviteFailureToErrorCode(inviteResult.category ?? "unknown"),
+  });
   logInviteDiagnostic({
     operation: "reinvite",
     tenantId,
@@ -744,4 +839,75 @@ export async function reinviteEmployee(actor: Actor, employeeId: string): Promis
     throw new Error("EMPLOYEE_INVITE_TENANT_CONFLICT");
   }
   throw new Error(mapInviteFailureToErrorCode(inviteResult.category ?? "unknown"));
+}
+
+export async function generateEmployeeActivationLink(
+  actor: Actor,
+  employeeId: string,
+): Promise<ActivationLinkResult> {
+  requireAdmin(actor);
+  const tenantId = requireTenant(actor);
+
+  const supabase = createServiceRoleClient();
+  const { data, error } = await supabase
+    .from("employees")
+    .select("id, email, setup_status")
+    .eq("tenant_id", tenantId)
+    .eq("id", employeeId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`EMPLOYEE_FETCH_FAILED: ${error.message}`);
+  }
+  const employee = data as { id: string; email: string; setup_status: "incomplete" | "ready" | "active" } | null;
+  if (!employee) {
+    throw new Error("NOT_FOUND");
+  }
+  if (employee.setup_status === "active") {
+    throw new Error("EMPLOYEE_ALREADY_ACTIVE");
+  }
+
+  const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
+    type: "magiclink",
+    email: employee.email,
+    options: {
+      redirectTo: `${env.siteUrl}/auth/callback`,
+    },
+  });
+
+  if (linkError) {
+    const category = classifyInviteFailure(linkError);
+    logInviteDiagnostic({
+      operation: "reinvite",
+      tenantId,
+      employeeId,
+      email: employee.email,
+      result: "failed",
+      category,
+      code: getAuthErrorCode(linkError),
+      statusCode: getAuthErrorStatus(linkError) ?? undefined,
+      message: getAuthErrorMessage(linkError),
+    });
+    await recordInviteTelemetry(tenantId, employeeId, {
+      succeeded: false,
+      failureCode: mapInviteFailureToErrorCode(category),
+    });
+    throw new Error("EMPLOYEE_ACTIVATION_LINK_FAILED");
+  }
+
+  const hashedToken = linkData?.properties?.hashed_token;
+  if (!hashedToken) {
+    await recordInviteTelemetry(tenantId, employeeId, {
+      succeeded: false,
+      failureCode: "EMPLOYEE_ACTIVATION_LINK_FAILED",
+    });
+    throw new Error("EMPLOYEE_ACTIVATION_LINK_FAILED");
+  }
+
+  const activationLink = `${env.siteUrl}/auth/callback?token_hash=${hashedToken}&type=magiclink`;
+  await recordInviteTelemetry(tenantId, employeeId, { succeeded: true });
+  await writeAudit(actor, "employee.activation_link_generated", employeeId, true);
+
+  return { activationLink };
 }
