@@ -69,6 +69,10 @@ type EmployeeTelemetryCapabilities = {
   checkedAt: string;
   missingColumns: EmployeeTelemetryColumn[];
   limitedMode: boolean;
+  schemaBaseline: {
+    totalFiles: number;
+    latestFile: string;
+  };
 };
 
 let employeeTelemetryCapabilitiesCache:
@@ -79,6 +83,10 @@ let employeeTelemetryCapabilitiesCache:
   | null = null;
 
 const EMPLOYEE_TELEMETRY_CACHE_TTL_MS = 5 * 60 * 1000;
+const SCHEMA_BASELINE = {
+  totalFiles: 14,
+  latestFile: "tenancy_rls.sql",
+} as const;
 
 function isColumnMissingMessage(message: string, column: EmployeeTelemetryColumn): boolean {
   const lower = message.toLowerCase();
@@ -106,6 +114,7 @@ function noteMissingTelemetryColumns(columns: EmployeeTelemetryColumn[], reason:
     checkedAt: new Date().toISOString(),
     missingColumns: merged,
     limitedMode: merged.length > 0,
+    schemaBaseline: SCHEMA_BASELINE,
   });
 
   console.warn("EMPLOYEE_SCHEMA_CAPABILITY_WARN", {
@@ -153,6 +162,7 @@ async function detectEmployeeTelemetryCapabilities(): Promise<EmployeeTelemetryC
     checkedAt: new Date().toISOString(),
     missingColumns,
     limitedMode: missingColumns.length > 0,
+    schemaBaseline: SCHEMA_BASELINE,
   });
 
   if (capabilities.limitedMode) {

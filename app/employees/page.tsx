@@ -195,6 +195,15 @@ export default async function EmployeesPage({
         Add teammates, track invite progress, and keep onboarding moving from one place.
       </p>
 
+      <div className="mt-4 rounded-lg border border-ink-300/70 bg-white/70 px-4 py-3 text-[13px] text-ink-700">
+        <p>
+          Schema visibility: checked {formatDateTime(telemetryCapabilities.checkedAt)} against {telemetryCapabilities.schemaBaseline.totalFiles} expected schema files.
+        </p>
+        <p className="mt-1 text-[12px] text-ink-500">
+          Latest expected migration file: {telemetryCapabilities.schemaBaseline.latestFile}.
+        </p>
+      </div>
+
       {telemetryCapabilities.limitedMode ? (
         <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
           Limited telemetry mode: invite diagnostics are partially unavailable because schema columns are missing ({telemetryCapabilities.missingColumns.join(", ")}).
