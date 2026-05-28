@@ -46,12 +46,21 @@ function requireAdmin(actor: Actor): void {
 async function writeAudit(actor: Actor, actionType: string, targetId?: string): Promise<void> {
   const tenantId = requireTenant(actor);
   const supabase = createServiceRoleClient();
-  await supabase.from("audit_logs").insert({
+  const { error } = await supabase.from("audit_logs").insert({
     tenant_id: tenantId,
     actor_user_id: actor.authUserId,
     action_type: actionType,
     target_id: targetId ?? null,
   } as never);
+  if (error) {
+    console.error("AUDIT_LOG_WRITE_FAILED", {
+      domain: "onboarding",
+      action_type: actionType,
+      tenant_id: tenantId,
+      target_id: targetId ?? null,
+      message: error.message,
+    });
+  }
 }
 
 export async function maybeFireActivationCompleted(tenantId: string, userId: string): Promise<void> {
