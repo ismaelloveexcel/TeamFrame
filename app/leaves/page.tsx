@@ -18,13 +18,13 @@ const ERROR_COPY: Record<string, string> = {
   FORBIDDEN: "You do not have permission for that action.",
   NO_EMPLOYEE_RECORD: "Your account is not linked to an employee profile yet. Ask your admin.",
   NO_TENANT_CONTEXT: "Session error — please sign out and back in.",
-  STALE_WRITE: "That record changed. Refresh and try again.",
-  MISSING_EXPECTED_UPDATED_AT: "Missing concurrency marker. Refresh and retry.",
+  STALE_WRITE: "This request changed. Refresh and try again.",
+  MISSING_EXPECTED_UPDATED_AT: "This action is out of date. Refresh and retry.",
   INVALID_INPUT: "Check the dates and try again.",
   LEAVE_SUBMIT_FAILED: "Could not submit leave request.",
   LEAVE_DECISION_FAILED: "Could not record decision.",
   AUDIT_LOG_FAILED: "Could not record required audit trail. No change was applied.",
-  UNKNOWN: "Unexpected error. Please retry.",
+  UNKNOWN: "Something went wrong. Refresh and try again.",
 };
 
 function formatDate(iso: string): string {

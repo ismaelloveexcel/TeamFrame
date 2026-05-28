@@ -19,12 +19,12 @@ const ERROR_COPY: Record<string, string> = {
   FORBIDDEN: "You do not have permission for that action.",
   NO_TENANT_CONTEXT: "Session error — please sign out and back in.",
   NO_EMPLOYEE_RECORD: "Your account is not linked to an employee profile yet.",
-  STALE_WRITE: "That record changed. Refresh and try again.",
-  MISSING_EXPECTED_UPDATED_AT: "Missing concurrency marker. Refresh and retry.",
+  STALE_WRITE: "This item changed. Refresh and try again.",
+  MISSING_EXPECTED_UPDATED_AT: "This action is out of date. Refresh and retry.",
   INVALID_INPUT: "Check your input and try again.",
   ONBOARDING_ASSIGN_FAILED: "Could not assign task.",
   ONBOARDING_COMPLETE_FAILED: "Could not complete task.",
-  UNKNOWN: "Unexpected error. Please retry.",
+  UNKNOWN: "Something went wrong. Refresh and try again.",
 };
 
 function formatDate(iso: string): string {

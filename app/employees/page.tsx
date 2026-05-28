@@ -22,8 +22,8 @@ const STATUS_COPY: Record<string, string> = {
 const ERROR_COPY: Record<string, string> = {
   FORBIDDEN: "You do not have permission for that action.",
   NOT_FOUND: "That employee could not be found.",
-  STALE_WRITE: "That record changed. Refresh and try again.",
-  MISSING_EXPECTED_UPDATED_AT: "Missing concurrency marker. Refresh and retry.",
+  STALE_WRITE: "This record changed. Refresh and try again.",
+  MISSING_EXPECTED_UPDATED_AT: "This action is out of date. Refresh and retry.",
   NO_PATCH_FIELDS: "No editable fields were provided.",
   EMPLOYEE_CREATE_FAILED: "Could not create employee.",
   EMPLOYEE_UPDATE_FAILED: "Could not update employee.",
@@ -32,7 +32,7 @@ const ERROR_COPY: Record<string, string> = {
   EMPLOYEE_INVITE_FAILED: "Employee saved, but invite delivery failed. Try Re-send invite.",
   AUDIT_LOG_FAILED: "Could not record required audit trail. No change was applied.",
   INVALID_INPUT: "Input validation failed.",
-  UNKNOWN: "Unexpected error. Please retry.",
+  UNKNOWN: "Something went wrong. Refresh and try again.",
 };
 
 export default async function EmployeesPage({

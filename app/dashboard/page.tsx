@@ -45,12 +45,24 @@ export default async function DashboardPage() {
   const actor = await requireTenantActor();
   const isAdmin = actor.role === "admin";
 
-  const [employees, adminEmployees, pendingLeaves, onboardingTasks] = await Promise.all([
-    listOrgChart(actor),
+  const [orgEmployees, adminEmployees, pendingLeaves, onboardingTasks, eventRows] = await Promise.all([
+    isAdmin ? Promise.resolve([]) : listOrgChart(actor),
     isAdmin ? listEmployeesForAdmin(actor) : Promise.resolve([]),
     isAdmin ? listPendingLeavesWithEmployee(actor) : Promise.resolve([]),
     isAdmin ? listAllOnboardingTasks(actor) : Promise.resolve([]),
+    isAdmin ? listActivationEvents(actor, ACTIVATION_EVENTS.map((e) => e.event)) : Promise.resolve([]),
   ]);
+
+  const employees = isAdmin
+    ? adminEmployees.map((employee) => ({
+        id: employee.id,
+        full_name: employee.full_name,
+        role_title: employee.role_title,
+        department: employee.department,
+        manager_id: employee.manager_id,
+        status: employee.status,
+      }))
+    : orgEmployees;
 
   const total = employees.length;
   const active = employees.filter((e) => e.status === "active").length;
@@ -62,12 +74,6 @@ export default async function DashboardPage() {
   ).length;
   const pendingLeaveCount = pendingLeaves.length;
   const onboardingNeedsAttention = onboardingTasks.filter((task) => task.status === "pending").length;
-
-  // Read all activation events with timestamps through the service layer
-  const eventRows = await listActivationEvents(
-    actor,
-    ACTIVATION_EVENTS.map((e) => e.event),
-  );
 
   const eventMap = new Map(
     eventRows.map((r) => [r.event_name, r.created_at]),
