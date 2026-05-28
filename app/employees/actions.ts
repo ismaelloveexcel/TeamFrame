@@ -29,11 +29,20 @@ const UpdateInputSchema = z.object({
 const ArchiveInputSchema = z.object({
   employee_id: z.string().uuid(),
   expected_updated_at: z.string().trim().min(1),
+  return_to: z.string().trim().optional(),
 });
 
 const ReinviteInputSchema = z.object({
   employee_id: z.string().uuid(),
+  return_to: z.string().trim().optional(),
 });
+
+function safeReturnPath(path: string | undefined, fallback: string): string {
+  if (!path || !path.startsWith("/") || path.startsWith("//")) {
+    return fallback;
+  }
+  return path;
+}
 
 function getErrorCode(error: unknown): string {
   if (error instanceof z.ZodError) return "INVALID_INPUT";
@@ -111,13 +120,18 @@ export async function updateEmployeeAction(formData: FormData): Promise<void> {
 export async function archiveEmployeeAction(formData: FormData): Promise<void> {
   let failed = false;
   let errorCode = "UNKNOWN";
+  let employeeId = "";
+  let returnTo = "/employees";
 
   try {
     const actor = await requireTenantActor();
     const parsed = ArchiveInputSchema.parse({
       employee_id: formData.get("employee_id"),
       expected_updated_at: formData.get("expected_updated_at"),
+      return_to: formData.get("return_to"),
     });
+    employeeId = parsed.employee_id;
+    returnTo = safeReturnPath(parsed.return_to, "/employees");
 
     await softDeleteEmployee(actor, parsed.employee_id, parsed.expected_updated_at);
   } catch (error) {
@@ -126,23 +140,26 @@ export async function archiveEmployeeAction(formData: FormData): Promise<void> {
   }
 
   if (failed) {
-    redirect(`/employees?error=${encodeURIComponent(errorCode)}`);
+    redirect(`${returnTo}?error=${encodeURIComponent(errorCode)}&employee=${encodeURIComponent(employeeId)}`);
   }
 
-  redirect("/employees?status=archived");
+  redirect(`${returnTo}?status=archived&employee=${encodeURIComponent(employeeId)}`);
 }
 
 export async function reinviteEmployeeAction(formData: FormData): Promise<void> {
   let failed = false;
   let errorCode = "UNKNOWN";
   let employeeId = "";
+  let returnTo = "/employees";
 
   try {
     const actor = await requireTenantActor();
     const parsed = ReinviteInputSchema.parse({
       employee_id: formData.get("employee_id"),
+      return_to: formData.get("return_to"),
     });
     employeeId = parsed.employee_id;
+    returnTo = safeReturnPath(parsed.return_to, "/employees");
 
     await reinviteEmployee(actor, parsed.employee_id);
   } catch (error) {
@@ -151,8 +168,8 @@ export async function reinviteEmployeeAction(formData: FormData): Promise<void> 
   }
 
   if (failed) {
-    redirect(`/employees?error=${encodeURIComponent(errorCode)}&employee=${encodeURIComponent(employeeId)}`);
+    redirect(`${returnTo}?error=${encodeURIComponent(errorCode)}&employee=${encodeURIComponent(employeeId)}`);
   }
 
-  redirect(`/employees?status=reinvited&employee=${encodeURIComponent(employeeId)}`);
+  redirect(`${returnTo}?status=reinvited&employee=${encodeURIComponent(employeeId)}`);
 }

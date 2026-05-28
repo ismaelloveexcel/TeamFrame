@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { requireTenantActor } from "@/middleware/rbac";
+import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { listEmployeesForAdmin, listOrgChart } from "@/services/employeeService";
 import { listActivationEvents } from "@/services/activationService";
 import { listPendingLeavesWithEmployee } from "@/services/leaveService";
 import { listAllOnboardingTasks } from "@/services/onboardingService";
 import { logoutAction } from "@/app/auth/actions";
+import { reinviteEmployeeAction, archiveEmployeeAction } from "@/app/employees/actions";
+import { decideLeaveAction } from "@/app/leaves/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -77,9 +80,38 @@ const SETUP_STEPS = [
   },
 ] as const;
 
-export default async function DashboardPage() {
+const STATUS_COPY: Record<string, string> = {
+  reinvited: "Invite re-sent from the action center.",
+  archived: "Employee archived from the action center.",
+  decided: "Leave decision recorded.",
+};
+
+const DECISION_COPY: Record<string, string> = {
+  approved: "Leave request approved.",
+  rejected: "Leave request rejected.",
+};
+
+const ERROR_COPY: Record<string, string> = {
+  FORBIDDEN: "You do not have permission for that action.",
+  NOT_FOUND: "That record could not be found.",
+  STALE_WRITE: "This item changed. Refresh and try again.",
+  MISSING_EXPECTED_UPDATED_AT: "This action is out of date. Refresh and retry.",
+  EMPLOYEE_INVITE_FAILED: "Invite delivery failed. Try again from the employee queue.",
+  EMPLOYEE_DELETE_FAILED: "Could not archive employee.",
+  LEAVE_DECISION_FAILED: "Could not record leave decision.",
+  AUDIT_LOG_FAILED: "Required audit logging failed, so no change was applied.",
+  INVALID_INPUT: "That action could not be processed. Refresh and try again.",
+  UNKNOWN: "Something went wrong. Refresh and try again.",
+};
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string; error?: string; employee?: string; leave?: string; decision?: string }>;
+}) {
   const actor = await requireTenantActor();
   const isAdmin = actor.role === "admin";
+  const { status, error, employee: employeeParam, leave: leaveParam, decision } = await searchParams;
 
   const [orgEmployees, adminEmployees, pendingLeaves, onboardingTasks, eventRows] = await Promise.all([
     isAdmin ? Promise.resolve([]) : listOrgChart(actor),
@@ -137,6 +169,8 @@ export default async function DashboardPage() {
   // First-run: only the admin in the system and none of the setup steps completed yet
   const isFirstRun = total <= 1 && completedSteps === 0;
   const nextStep = SETUP_STEPS.find((s) => !firedEvents.has(s.event));
+  const successMessage = status === "decided" ? (DECISION_COPY[decision ?? ""] ?? STATUS_COPY.decided) : status ? (STATUS_COPY[status] ?? null) : null;
+  const errorMessage = error ? (ERROR_COPY[error] ?? ERROR_COPY.UNKNOWN) : null;
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-14">
@@ -172,6 +206,20 @@ export default async function DashboardPage() {
           </button>
         </form>
       </div>
+
+      {successMessage ? (
+        <p className="mt-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-[14px] text-emerald-700">
+          {successMessage}
+        </p>
+      ) : null}
+      {errorMessage ? (
+        <p
+          role="alert"
+          className="mt-6 rounded-lg border border-ink-300/80 bg-white/80 px-4 py-3 text-[14px] text-ink-700"
+        >
+          {errorMessage}
+        </p>
+      ) : null}
 
       {isFirstRun ? (
         /* ── Full getting-started guide for brand-new companies ── */
@@ -383,9 +431,48 @@ export default async function DashboardPage() {
                   <div className="mt-4 space-y-3">
                     {pendingInviteEmployees.length > 0 ? (
                       pendingInviteEmployees.map((employee) => (
-                        <div key={employee.id} className="rounded-md border border-ink-200 bg-ink-50/60 px-3 py-2">
-                          <p className="text-[13px] font-medium text-ink-900">{employee.full_name}</p>
-                          <p className="text-[12px] text-ink-500">Invite pending since {formatDate(employee.updated_at)}</p>
+                        <div key={employee.id} className="rounded-md border border-ink-200 bg-ink-50/60 px-3 py-3">
+                          {status === "reinvited" && employeeParam === employee.id ? (
+                            <p className="mb-2 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[12px] text-emerald-700">
+                              Invite sent again.
+                            </p>
+                          ) : null}
+                          {status === "archived" && employeeParam === employee.id ? (
+                            <p className="mb-2 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[12px] text-emerald-700">
+                              Employee archived.
+                            </p>
+                          ) : null}
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-[13px] font-medium text-ink-900">{employee.full_name}</p>
+                              <p className="text-[12px] text-ink-500">{employee.email}</p>
+                              <p className="mt-1 text-[12px] text-ink-500">Invite pending since {formatDate(employee.updated_at)}</p>
+                            </div>
+                            <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                              Waiting on sign-in
+                            </span>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <form action={reinviteEmployeeAction}>
+                              <input type="hidden" name="employee_id" value={employee.id} />
+                              <input type="hidden" name="return_to" value="/dashboard" />
+                              <PendingSubmitButton
+                                idleLabel="Re-send invite"
+                                pendingLabel="Sending..."
+                                className="rounded-full bg-ink-900 px-3 py-1.5 text-[12px] font-medium text-paper transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:bg-ink-300"
+                              />
+                            </form>
+                            <form action={archiveEmployeeAction}>
+                              <input type="hidden" name="employee_id" value={employee.id} />
+                              <input type="hidden" name="expected_updated_at" value={employee.updated_at} />
+                              <input type="hidden" name="return_to" value="/dashboard" />
+                              <PendingSubmitButton
+                                idleLabel="Archive"
+                                pendingLabel="Archiving..."
+                                className="rounded-full border border-ink-300 px-3 py-1.5 text-[12px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-400"
+                              />
+                            </form>
+                          </div>
                         </div>
                       ))
                     ) : (
@@ -410,11 +497,48 @@ export default async function DashboardPage() {
                   </div>
                   <div className="mt-4 space-y-3">
                     {pendingLeaves.slice(0, 3).map((leave) => (
-                      <div key={leave.id} className="rounded-md border border-ink-200 bg-ink-50/60 px-3 py-2">
-                        <p className="text-[13px] font-medium text-ink-900">{leave.employee_full_name}</p>
-                        <p className="text-[12px] text-ink-500">
-                          {formatDate(leave.start_date)} to {formatDate(leave.end_date)} · requested {formatDate(leave.created_at)}
-                        </p>
+                      <div key={leave.id} className="rounded-md border border-ink-200 bg-ink-50/60 px-3 py-3">
+                        {status === "decided" && leaveParam === leave.id ? (
+                          <p className="mb-2 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[12px] text-emerald-700">
+                            {decision === "rejected" ? "Rejected from dashboard." : "Approved from dashboard."}
+                          </p>
+                        ) : null}
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-[13px] font-medium text-ink-900">{leave.employee_full_name}</p>
+                            <p className="text-[12px] text-ink-500">{leave.employee_role_title}</p>
+                            <p className="mt-1 text-[12px] text-ink-500">
+                              {formatDate(leave.start_date)} to {formatDate(leave.end_date)} · requested {formatDate(leave.created_at)}
+                            </p>
+                          </div>
+                          <span className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700">
+                            Needs decision
+                          </span>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <form action={decideLeaveAction}>
+                            <input type="hidden" name="leave_id" value={leave.id} />
+                            <input type="hidden" name="expected_updated_at" value={leave.updated_at} />
+                            <input type="hidden" name="decision" value="approved" />
+                            <input type="hidden" name="return_to" value="/dashboard" />
+                            <PendingSubmitButton
+                              idleLabel="Approve"
+                              pendingLabel="Approving..."
+                              className="rounded-full bg-ink-900 px-3 py-1.5 text-[12px] font-medium text-paper transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:bg-ink-300"
+                            />
+                          </form>
+                          <form action={decideLeaveAction}>
+                            <input type="hidden" name="leave_id" value={leave.id} />
+                            <input type="hidden" name="expected_updated_at" value={leave.updated_at} />
+                            <input type="hidden" name="decision" value="rejected" />
+                            <input type="hidden" name="return_to" value="/dashboard" />
+                            <PendingSubmitButton
+                              idleLabel="Reject"
+                              pendingLabel="Rejecting..."
+                              className="rounded-full border border-ink-300 px-3 py-1.5 text-[12px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-400"
+                            />
+                          </form>
+                        </div>
                       </div>
                     ))}
                     {pendingLeaves.length === 0 ? (
@@ -440,11 +564,18 @@ export default async function DashboardPage() {
                   <div className="mt-4 space-y-3">
                     {onboardingAttentionItems.length > 0 ? (
                       onboardingAttentionItems.map((task) => (
-                        <div key={task.id} className="rounded-md border border-ink-200 bg-ink-50/60 px-3 py-2">
-                          <p className="text-[13px] font-medium text-ink-900">{task.title}</p>
-                          <p className="text-[12px] text-ink-500">
-                            {employeeMap.get(task.employee_id) ?? "Employee"} · added {formatDate(task.created_at)}
-                          </p>
+                        <div key={task.id} className="rounded-md border border-ink-200 bg-ink-50/60 px-3 py-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-[13px] font-medium text-ink-900">{task.title}</p>
+                              <p className="text-[12px] text-ink-500">
+                                {employeeMap.get(task.employee_id) ?? "Employee"} · added {formatDate(task.created_at)}
+                              </p>
+                            </div>
+                            <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                              Still open
+                            </span>
+                          </div>
                         </div>
                       ))
                     ) : (
