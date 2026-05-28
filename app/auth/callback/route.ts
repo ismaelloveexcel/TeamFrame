@@ -83,6 +83,7 @@ function redirectPreservingAuthSession(
   for (const cookie of preservedAuthCookies) {
     response.cookies.set(cookie.name, cookie.value, {
       path: "/",
+      httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
     });
