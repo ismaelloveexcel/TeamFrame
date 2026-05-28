@@ -26,6 +26,11 @@ export async function middleware(request: NextRequest) {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
+    console.error("AUTH_MIDDLEWARE_ENV_MISSING", {
+      pathname,
+      has_supabase_url: Boolean(supabaseUrl),
+      has_supabase_anon_key: Boolean(supabaseAnonKey),
+    });
     return redirectToAuth(request);
   }
 
