@@ -1,6 +1,7 @@
 import { requireTenantActor } from "@/middleware/rbac";
 import { OrgChart } from "@/components/OrgChart";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
+import { ConfirmSubmitButton } from "@/components/ConfirmSubmitButton";
 import { listEmployeesForAdmin, listOrgChart } from "@/services/employeeService";
 import Link from "next/link";
 import { CopyInviteEmailButton } from "./CopyInviteEmailButton";
@@ -342,35 +343,38 @@ export default async function EmployeesPage({
                 <p>Activation: {formatDateTime(employee.activated_at)}</p>
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center gap-4">
-                <CopyInviteEmailButton email={employee.email} />
+              <div className="mt-3 flex flex-wrap items-center gap-2 sm:gap-3">
+                <div className="w-full sm:w-auto">
+                  <CopyInviteEmailButton email={employee.email} />
+                </div>
                 {employee.setup_status !== "active" && employee.status !== "inactive" ? (
                   <>
-                    <form action={reinviteEmployeeAction}>
+                    <form action={reinviteEmployeeAction} className="w-full sm:w-auto">
                       <input type="hidden" name="employee_id" value={employee.id} />
                       <PendingSubmitButton
                         idleLabel="Re-send invite"
                         pendingLabel="Sending..."
-                        className="rounded-full border border-ink-300 px-3 py-1 text-[12px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-400"
+                        className="w-full rounded-full border border-ink-300 px-3 py-1 text-[12px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-400 sm:w-auto"
                       />
                     </form>
-                    <form action={generateActivationLinkAction}>
+                    <form action={generateActivationLinkAction} className="w-full sm:w-auto">
                       <input type="hidden" name="employee_id" value={employee.id} />
                       <PendingSubmitButton
                         idleLabel="Generate activation link"
                         pendingLabel="Generating..."
-                        className="rounded-full border border-ink-300 px-3 py-1 text-[12px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-400"
+                        className="w-full rounded-full border border-ink-300 px-3 py-1 text-[12px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-400 sm:w-auto"
                       />
                     </form>
                   </>
                 ) : null}
-                <form action={archiveEmployeeAction}>
+                <form action={archiveEmployeeAction} className="w-full sm:w-auto">
                   <input type="hidden" name="employee_id" value={employee.id} />
                   <input type="hidden" name="expected_updated_at" value={employee.updated_at} />
-                  <PendingSubmitButton
+                  <ConfirmSubmitButton
                     idleLabel="Archive employee"
                     pendingLabel="Archiving..."
-                    className="rounded-full border border-ink-300 px-3 py-1 text-[12px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-400"
+                    confirmMessage={`Archive ${employee.full_name}? This removes them from active workflows.`}
+                    className="w-full rounded-full border border-ink-300 px-3 py-1 text-[12px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-400 sm:w-auto"
                   />
                 </form>
               </div>

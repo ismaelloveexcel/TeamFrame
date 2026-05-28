@@ -174,14 +174,25 @@ export default async function OnboardingPage({
             </div>
             <ul className="divide-y divide-ink-300/40">
               {pending.map((task) => (
-                <li key={task.id} className="flex items-center justify-between gap-4 px-5 py-4">
-                  <div className="space-y-0.5">
+                <li key={task.id} className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
+                  <div className="min-w-0 flex-1 space-y-0.5">
                     <p className="text-[15px] text-ink-900">{task.title}</p>
                     <p className="text-[12px] text-ink-500">
                       {employeeMap.get(task.employee_id) ?? task.employee_id} · Assigned {formatDate(task.created_at)}
                     </p>
                   </div>
-                  <TaskStatusBadge status={task.status} />
+                  <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
+                    <TaskStatusBadge status={task.status} />
+                    <form action={completeOnboardingTaskAction} className="w-full sm:w-auto">
+                      <input type="hidden" name="task_id" value={task.id} />
+                      <input type="hidden" name="expected_updated_at" value={task.updated_at} />
+                      <PendingSubmitButton
+                        idleLabel="Mark complete"
+                        pendingLabel="Saving..."
+                        className="w-full rounded-full border border-ink-300 px-3 py-1.5 text-[12px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-400 sm:w-auto"
+                      />
+                    </form>
+                  </div>
                 </li>
               ))}
             </ul>

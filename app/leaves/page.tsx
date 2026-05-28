@@ -6,6 +6,7 @@ import {
 import { listPendingLeavesWithEmployee, type PendingLeaveWithEmployee } from "@/services/leaveService";
 import Link from "next/link";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
+import { ConfirmSubmitButton } from "@/components/ConfirmSubmitButton";
 import { submitLeaveAction, decideLeaveAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -164,8 +165,8 @@ export default async function LeavesPage({
                       </span>
                     </p>
                   </div>
-                  <div className="flex gap-2">
-                    <form action={decideLeaveAction}>
+                  <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:flex-nowrap">
+                    <form action={decideLeaveAction} className="w-full sm:w-auto">
                       <input type="hidden" name="leave_id" value={leave.id} />
                       <input
                         type="hidden"
@@ -176,10 +177,10 @@ export default async function LeavesPage({
                       <PendingSubmitButton
                         idleLabel="Approve request"
                         pendingLabel="Approving..."
-                        className="rounded-full bg-ink-900 px-4 py-1.5 text-[13px] font-medium text-paper transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:bg-ink-300"
+                        className="w-full rounded-full bg-ink-900 px-4 py-1.5 text-[13px] font-medium text-paper transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:bg-ink-300 sm:w-auto"
                       />
                     </form>
-                    <form action={decideLeaveAction}>
+                    <form action={decideLeaveAction} className="w-full sm:w-auto">
                       <input type="hidden" name="leave_id" value={leave.id} />
                       <input
                         type="hidden"
@@ -187,10 +188,11 @@ export default async function LeavesPage({
                         value={leave.updated_at}
                       />
                       <input type="hidden" name="decision" value="rejected" />
-                      <PendingSubmitButton
+                      <ConfirmSubmitButton
                         idleLabel="Reject request"
                         pendingLabel="Rejecting..."
-                        className="rounded-full border border-ink-300 px-4 py-1.5 text-[13px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-400"
+                        confirmMessage={`Reject leave request from ${leave.employee_full_name}?`}
+                        className="w-full rounded-full border border-ink-300 px-4 py-1.5 text-[13px] text-ink-700 transition hover:border-ink-900 hover:text-ink-900 disabled:cursor-not-allowed disabled:border-ink-200 disabled:text-ink-400 sm:w-auto"
                       />
                     </form>
                   </div>
