@@ -205,6 +205,29 @@ npm run dev
 ```
 Open `http://localhost:3030/auth`, enter the same email, click the link in your inbox, and you'll land on `/dashboard` as an authenticated admin.
 
+## Deployment confidence
+
+Run this sequence before shipping:
+
+```bash
+npm ci
+npm run env:check
+npm run lint
+npm run typecheck
+npm run build
+```
+
+If your deployment or CI environment also has the CI service-role secret configured, run the smoke loop after the build:
+
+```bash
+npm run env:check:smoke
+npm run smoke:core-loop
+```
+
+Migration order is locked in [scripts/schema-order.mjs](scripts/schema-order.mjs). Apply schema changes with `npm run db:apply` before the first deploy and after every schema change. The script is idempotent and safe to re-run.
+
+The CI workflow runs install, environment validation, lint, typecheck, and build on every `main` and `develop` push or pull request. The optional smoke job runs only on `main` or manual dispatch when the required CI secrets are present.
+
 ---
 
 ## Branch protection rules
