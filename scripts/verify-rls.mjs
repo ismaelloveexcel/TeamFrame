@@ -81,13 +81,21 @@ const adminClient = createClient(STAGING_URL, STAGING_SERVICE_KEY, {
 async function cleanup() {
   console.log("• Cleaning up previous test fixtures…");
 
-  // Delete test auth users (by email search).
+  // Delete test auth users (by email search) — paginate to handle any number of users.
   const testEmails = Object.values(TEST_USERS).map((u) => u.email);
-  const { data: { users }, error: listErr } = await adminClient.auth.admin.listUsers({ perPage: 200 });
-  if (listErr) throw new Error(`[SETUP] Failed to list auth users: ${listErr.message}`);
-  for (const user of users) {
+  let allUsers = [];
+  let listPage = 1;
+  while (true) {
+    const { data: { users }, error: listErr } = await adminClient.auth.admin.listUsers({ page: listPage, perPage: 200 });
+    if (listErr) throw new Error(`[SETUP] Failed to list auth users (page ${listPage}): ${listErr.message}`);
+    allUsers = allUsers.concat(users);
+    if (users.length < 200) break;
+    listPage++;
+  }
+  for (const user of allUsers) {
     if (testEmails.includes(user.email)) {
-      await adminClient.auth.admin.deleteUser(user.id);
+      const { error: delErr } = await adminClient.auth.admin.deleteUser(user.id);
+      if (delErr) console.warn(`  [SETUP WARN] Failed to delete auth user ${user.email}: ${delErr.message}`);
     }
   }
 
@@ -125,6 +133,7 @@ async function seed() {
 
   const tenantA = companies.find((c) => c.slug === TENANT_A_SLUG);
   const tenantB = companies.find((c) => c.slug === TENANT_B_SLUG);
+  if (!tenantA || !tenantB) throw new Error("[SETUP] Company insert did not return expected slugs — cannot proceed.");
 
   // Insert employees for tenant_a.
   const { data: empA, error: empAErr } = await adminClient
@@ -163,6 +172,7 @@ async function seed() {
 
   // Insert a leave record for tenant_a non-admin (used in admin-boundary probe 4b).
   const taEmployee = empA.find((e) => e.email === TEST_USERS.ta_employee.email);
+  if (!taEmployee) throw new Error("[SETUP] Tenant A employee row not found after insert — seed data inconsistent.");
   const { data: leaveA, error: leaveAErr } = await adminClient
     .from("leaves")
     .insert({
@@ -270,6 +280,7 @@ async function main() {
   console.log("═══════════════════════════════════════════════════════════\n");
 
   await cleanup();
+  try {
   const fixtures = await seed();
   const { tenantA, tenantB, empA, empB, leaveAId, leaveBId, taskBId, auditBId } = fixtures;
 
@@ -334,6 +345,7 @@ async function main() {
   // ── Probe 4a: updateEmployee — non-admin ──────────────────────────────────
   await runProbe("4a. updateEmployee — non-admin → FORBIDDEN (0 rows modified)", async () => {
     const taAdminRow = empA.find((e) => e.email !== TEST_USERS.ta_employee.email);
+    assert(taAdminRow, "[SETUP] Could not find non-ta_employee row in tenant_a fixtures — setup error.");
     const { data, error, count } = await taEmployeeClient
       .from("employees")
       .update({ full_name: "HACKED" })
@@ -367,6 +379,7 @@ async function main() {
   // ── Probe 4c: assignOnboardingTask — non-admin ────────────────────────────
   await runProbe("4c. assignOnboardingTask — non-admin → FORBIDDEN (RLS blocks insert)", async () => {
     const taEmployee = empA.find((e) => e.email === TEST_USERS.ta_employee.email);
+    assert(taEmployee, "[SETUP] Could not find ta_employee row in tenant_a fixtures — setup error.");
     const { data, error } = await taEmployeeClient
       .from("onboarding_tasks")
       .insert({
@@ -388,6 +401,7 @@ async function main() {
   // ── Probe 4d: uploadDocument — non-admin ─────────────────────────────────
   await runProbe("4d. uploadDocument — non-admin → FORBIDDEN (RLS blocks insert)", async () => {
     const taEmployee = empA.find((e) => e.email === TEST_USERS.ta_employee.email);
+    assert(taEmployee, "[SETUP] Could not find ta_employee row in tenant_a fixtures — setup error.");
     const { data, error } = await taEmployeeClient
       .from("documents")
       .insert({
@@ -427,6 +441,10 @@ async function main() {
   } else {
     console.log("  ✓ All probes PASSED.");
     console.log("═══════════════════════════════════════════════════════════");
+  }
+  } finally {
+    // Supabase JS clients do not require explicit teardown.
+    // This block is a placeholder for connection cleanup if the client layer changes.
   }
 }
 

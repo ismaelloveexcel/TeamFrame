@@ -27,6 +27,7 @@ The logger does NOT replace the `audit_logs` table. The audit table is the syste
 |---|---|---|
 | `SENTRY_DSN` | Server | Sentry project DSN. Omit to keep Sentry dormant. |
 | `NEXT_PUBLIC_SENTRY_DSN` | Client | Same DSN value — required separately because Next.js only exposes `NEXT_PUBLIC_*` to the browser. |
+| `SENTRY_DEBUG` | Server | Set to `"true"` to log Sentry init confirmation on boot. For wiring verification only — not for production use. |
 
 ### Required for `/api/health` authenticated detail
 
@@ -97,6 +98,36 @@ Each action emits one JSON line (or pretty-print in development).
   "request_id": "r9r8r7r6-..."
 }
 ```
+
+---
+
+## Sentry Runtime Validation (Phase 1C)
+
+To confirm that Sentry initialises correctly in both the Node.js and edge runtimes without a live DSN:
+
+### Boot command
+
+```bash
+SENTRY_DSN=https://fake@o0.ingest.sentry.io/0 SENTRY_DEBUG=true npx next dev
+```
+
+### Expected output
+
+In the **server terminal**, within the first few lines of startup:
+```
+[SENTRY] init() called runtime=nodejs
+```
+
+After triggering any request that hits the **edge runtime** (e.g. navigating to any page — middleware runs on the edge):
+```
+[SENTRY] init() called runtime=edge
+```
+
+Both lines confirm the respective runtime config files (`sentry.server.config.ts` and `sentry.edge.config.ts`) were evaluated AND the `Sentry.init()` branch ran. If a line is missing, the DSN env var was not set or the config file was not loaded by `instrumentation.ts`.
+
+### Safety
+
+`SENTRY_DEBUG=true` should never be set in production. The flag is off by default (`undefined`). The log fires exactly once per module evaluation — re-evaluations (e.g. HMR in dev) will re-fire, which is acceptable and expected.
 
 **Failure example:**
 ```json

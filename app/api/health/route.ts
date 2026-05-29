@@ -17,7 +17,7 @@
  *  - Overall response ceiling: 2.5 s (safety net via Promise.race)
  *  - Secret comparison: crypto.timingSafeEqual (constant-time)
  *  - Unauthenticated callers never see error details or stack traces
- *  - Auth subsystem probe explicitly deferred (no probe = no false confidence)
+ *  - Auth subsystem probe: auth.admin.listUsers({ page: 1, perPage: 1 }) with 2 s timeout
  */
 
 import { type NextRequest, NextResponse } from "next/server";
@@ -29,6 +29,7 @@ import { captureActionError } from "@/lib/telemetry/sentry";
 export const dynamic = "force-dynamic";
 
 const SUBSYSTEM_TIMEOUT_MS = 2000;
+const AUTH_PROBE_TIMEOUT_MS = 2000;
 const RESPONSE_CEILING_MS = 2500;
 
 type SubsystemStatus = "ok" | "fail";
@@ -36,6 +37,7 @@ type SubsystemStatus = "ok" | "fail";
 interface HealthResult {
   db: SubsystemStatus;
   storage: SubsystemStatus;
+  auth: SubsystemStatus;
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -79,6 +81,19 @@ async function checkStorage(): Promise<SubsystemStatus> {
   }
 }
 
+async function checkAuth(): Promise<SubsystemStatus> {
+  try {
+    const supabase = createServiceRoleClient();
+    // Attach .catch to prevent unhandled-rejection if this promise loses the race.
+    const authPromise = supabase.auth.admin.listUsers({ page: 1, perPage: 1 });
+    authPromise.catch(() => {});
+    const { error } = await withTimeout(authPromise, AUTH_PROBE_TIMEOUT_MS);
+    return error ? "fail" : "ok";
+  } catch {
+    return "fail";
+  }
+}
+
 /**
  * Constant-time secret comparison.
  * Compares BYTE-length (not String.length / UTF-16 code units) before passing
@@ -114,14 +129,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   );
 
   // Run subsystem checks concurrently, race against the overall ceiling.
-  const checksPromise = Promise.allSettled([checkDb(), checkStorage()]);
+  const checksPromise = Promise.allSettled([checkDb(), checkStorage(), checkAuth()]);
   const raceResult = await Promise.race([checksPromise, ceiling]);
 
   let result: HealthResult;
 
   if (raceResult === null) {
     // Ceiling exceeded — mark everything degraded and return immediately.
-    result = { db: "fail", storage: "fail" };
+    result = { db: "fail", storage: "fail", auth: "fail" };
 
     const msg = "Health ceiling exceeded";
     logAction({
@@ -135,18 +150,20 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     });
     captureActionError("healthcheck", new Error(msg), { requestId });
   } else {
-    const [dbSettled, storageSettled] = raceResult;
+    const [dbSettled, storageSettled, authSettled] = raceResult;
 
     const dbStatus: SubsystemStatus =
       dbSettled.status === "fulfilled" ? dbSettled.value : "fail";
     const storageStatus: SubsystemStatus =
       storageSettled.status === "fulfilled" ? storageSettled.value : "fail";
+    const authStatus: SubsystemStatus =
+      authSettled.status === "fulfilled" ? authSettled.value : "fail";
 
-    result = { db: dbStatus, storage: storageStatus };
+    result = { db: dbStatus, storage: storageStatus, auth: authStatus };
 
-    const anyFail = dbStatus === "fail" || storageStatus === "fail";
+    const anyFail = dbStatus === "fail" || storageStatus === "fail" || authStatus === "fail";
     if (anyFail) {
-      const msg = `[HEALTHCHECK_FAIL] db=${dbStatus} storage=${storageStatus}`;
+      const msg = `[HEALTHCHECK_FAIL] db=${dbStatus} storage=${storageStatus} auth=${authStatus}`;
       logAction({
         action: "healthcheck",
         actorUserId: null,
@@ -161,7 +178,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   const overallStatus =
-    result.db === "ok" && result.storage === "ok" ? "ok" : "degraded";
+    result.db === "ok" && result.storage === "ok" && result.auth === "ok" ? "ok" : "degraded";
   const httpStatus = overallStatus === "ok" ? 200 : 503;
 
   if (authenticated) {

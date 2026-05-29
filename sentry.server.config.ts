@@ -18,6 +18,9 @@ import { scrubPII } from "@/lib/telemetry/scrub";
 
 const dsn = process.env.SENTRY_DSN;
 
+// HMR-safe once-per-module-evaluation log guard.
+let sentryInitLogged = false;
+
 if (dsn) {
   Sentry.init({
     dsn,
@@ -34,4 +37,9 @@ if (dsn) {
       return event;
     },
   });
+
+  if (process.env.SENTRY_DEBUG === "true" && !sentryInitLogged) {
+    sentryInitLogged = true;
+    console.log("[SENTRY] init() called runtime=nodejs");
+  }
 }
