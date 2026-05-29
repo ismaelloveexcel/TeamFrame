@@ -23,6 +23,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { createServiceRoleClient } from "@/lib/db/supabaseServer";
+import { buildPublicHealthPayload } from "@/lib/health/contract.mjs";
 import { logAction } from "@/lib/telemetry/logger";
 import { captureActionError } from "@/lib/telemetry/sentry";
 
@@ -193,5 +194,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   // Unauthenticated callers receive only the terse status — no subsystem detail.
-  return NextResponse.json({ status: overallStatus }, { status: httpStatus });
+  // Body shape is owned by buildPublicHealthPayload() so the guard script can
+  // verify the contract by importing the same helper. Do NOT inline this.
+  return NextResponse.json(buildPublicHealthPayload(overallStatus), { status: httpStatus });
 }
