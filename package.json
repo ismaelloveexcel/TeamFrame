@@ -23,7 +23,11 @@
     "verify:rls": "node scripts/verify-rls.mjs",
     "seed:admin": "node scripts/seed-admin.mjs",
     "storage:setup": "node scripts/setup-storage.mjs",
-    "smoke:core-loop": "node scripts/smoke-core-loop.mjs"
+    "smoke:core-loop": "node scripts/smoke-core-loop.mjs",
+    "guard:instrumentation": "node scripts/guard-instrumentation.mjs",
+    "guard:health-contract": "node scripts/guard-health-contract.mjs",
+    "guard:telemetry": "node scripts/guard-telemetry.mjs",
+    "guards": "npm run guard:instrumentation && npm run guard:health-contract && npm run guard:telemetry"
   },
   "dependencies": {
     "@sentry/nextjs": "^9.47.1",
