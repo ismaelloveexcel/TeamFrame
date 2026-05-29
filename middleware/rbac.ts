@@ -16,6 +16,23 @@ import "server-only";
 import { requireAuthSession } from "./auth";
 import { resolveIdentity, type Role } from "@/lib/rbac/roles";
 
+/**
+ * Thrown when a session has no tenant_id in its JWT app_metadata.
+ * This replaces the silent 'NO_TENANT_CONTEXT' error string so callers
+ * can distinguish missing-tenant from other auth failures if needed.
+ * Added in Phase 1A (Weekend 1) alongside tenancy_rls_v2.sql.
+ */
+export class MissingTenantContextError extends Error {
+  readonly code = "NO_TENANT_CONTEXT" as const;
+  constructor() {
+    // Message prefix MUST remain "NO_TENANT_CONTEXT" — existing services throw
+    // Error("NO_TENANT_CONTEXT") and UI pages map that exact code via getErrorCode().
+    // Changing the prefix silently degrades the user-facing error message to UNKNOWN.
+    super("NO_TENANT_CONTEXT: session has no app_metadata.tenant_id");
+    this.name = "MissingTenantContextError";
+  }
+}
+
 export type Actor = {
   authUserId: string;
   email: string;
@@ -65,7 +82,14 @@ export async function requireLinkedEmployee(): Promise<Actor & { employeeId: str
 export async function requireTenantActor(): Promise<Actor & { tenantId: string }> {
   const actor = await requireActor();
   if (!actor.tenantId) {
-    throw new Error("NO_TENANT_CONTEXT");
+    // Throw MissingTenantContextError (not a generic Error) so monitoring can
+    // surface sessions without a tenant_id JWT claim explicitly.
+    // See: middleware/rbac.ts MissingTenantContextError, tenancy_rls_v2.sql.
+    console.error("[TENANT_RESOLUTION_FAIL] requireTenantActor: actor has no tenantId", {
+      authUserId: actor.authUserId,
+      email: actor.email,
+    });
+    throw new MissingTenantContextError();
   }
   return { ...actor, tenantId: actor.tenantId };
 }

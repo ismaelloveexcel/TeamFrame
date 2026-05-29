@@ -36,8 +36,13 @@ export async function resolveIdentity(authUserId: string): Promise<ResolvedIdent
     throw new Error("RBAC: failed to resolve auth user");
   }
 
-  const claim = (data.user.app_metadata as { role?: unknown } | null)?.role;
+  // Phase 1A: tenantId is sourced from JWT app_metadata only — never from the
+  // employees row — so the middleware trust boundary matches RLS (which also
+  // reads JWT-only via current_actor_tenant_id() in tenancy_rls_v2.sql).
+  const appMeta = (data.user.app_metadata ?? {}) as { role?: unknown; tenant_id?: unknown };
+  const claim = appMeta.role;
   const role: Role = claim === "admin" ? "admin" : "employee";
+  const jwtTenantId = typeof appMeta.tenant_id === "string" ? appMeta.tenant_id : null;
   const email = data.user.email.toLowerCase();
 
   const { data: linkedEmployeeData, error: linkedEmpErr } = await supabase
@@ -121,11 +126,19 @@ export async function resolveIdentity(authUserId: string): Promise<ResolvedIdent
     }
   }
 
+  if (employee && jwtTenantId && employee.tenant_id !== jwtTenantId) {
+    console.warn("[TENANT_MISMATCH] employee row tenant differs from JWT app_metadata.tenant_id", {
+      authUserId: data.user.id,
+      employeeTenantId: employee.tenant_id,
+      jwtTenantId,
+    });
+  }
+
   return {
     authUserId: data.user.id,
     email,
     employeeId: employee?.id ?? null,
-    tenantId: employee?.tenant_id ?? null,
+    tenantId: jwtTenantId,
     role,
   };
 }
