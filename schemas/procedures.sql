@@ -7,6 +7,7 @@ create table if not exists procedures (
   title       text        not null,
   body        text        not null,
   version     integer     not null default 1,
+  is_published boolean    not null default true,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
   archived_at timestamptz,
@@ -15,6 +16,7 @@ create table if not exists procedures (
 
 alter table procedures add column if not exists tenant_id uuid;
 alter table procedures add column if not exists version integer not null default 1;
+alter table procedures add column if not exists is_published boolean not null default true;
 alter table procedures add column if not exists updated_at timestamptz not null default now();
 
 update procedures
@@ -32,6 +34,7 @@ exception when duplicate_object then null; end $$;
 
 create index if not exists procedures_tenant_id_idx on procedures(tenant_id);
 create index if not exists procedures_archived_at_idx on procedures(archived_at);
+create index if not exists procedures_published_idx on procedures(is_published);
 
 create or replace function procedures_touch_updated_at()
 returns trigger

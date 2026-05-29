@@ -1,0 +1,29 @@
+export default function EmployeesLoading() {
+  return (
+    <main className="mx-auto max-w-6xl px-6 py-14">
+      <div className="space-y-2 border-b border-ink-300/60 pb-5">
+        <div className="h-4 w-24 animate-pulse rounded bg-ink-200" />
+        <div className="h-10 w-64 animate-pulse rounded bg-ink-200" />
+      </div>
+
+      <section className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <article key={i} className="rounded-xl border border-ink-300/70 bg-white/75 p-4">
+            <div className="h-3 w-24 animate-pulse rounded bg-ink-100" />
+            <div className="mt-3 h-8 w-12 animate-pulse rounded bg-ink-200" />
+          </article>
+        ))}
+      </section>
+
+      <section className="mt-8 space-y-4">
+        {Array.from({ length: 2 }).map((_, i) => (
+          <article key={i} className="rounded-xl border border-ink-300/70 bg-white/80 p-5">
+            <div className="h-6 w-48 animate-pulse rounded bg-ink-200" />
+            <div className="mt-3 h-4 w-64 animate-pulse rounded bg-ink-100" />
+            <div className="mt-4 h-10 w-full animate-pulse rounded bg-ink-100" />
+          </article>
+        ))}
+      </section>
+    </main>
+  );
+}

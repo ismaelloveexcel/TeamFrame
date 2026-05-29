@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { CookieOptions } from "@supabase/ssr";
 import { createServerClient } from "@supabase/ssr";
 
-const PROTECTED_PREFIXES = ["/dashboard", "/employees", "/org-chart", "/leaves", "/onboarding"] as const;
+const PROTECTED_PREFIXES = ["/dashboard", "/employees", "/org-chart", "/leaves", "/onboarding", "/me"] as const;
 
 function isProtectedPath(pathname: string): boolean {
   return PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
@@ -26,6 +26,11 @@ export async function middleware(request: NextRequest) {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
+    console.error("AUTH_MIDDLEWARE_ENV_MISSING", {
+      pathname,
+      has_supabase_url: Boolean(supabaseUrl),
+      has_supabase_anon_key: Boolean(supabaseAnonKey),
+    });
     return redirectToAuth(request);
   }
 
@@ -56,5 +61,12 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/employees/:path*", "/org-chart/:path*"],
+  matcher: [
+    "/dashboard/:path*",
+    "/employees/:path*",
+    "/org-chart/:path*",
+    "/me/:path*",
+    "/leaves/:path*",
+    "/onboarding/:path*",
+  ],
 };

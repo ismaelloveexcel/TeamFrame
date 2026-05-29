@@ -11,6 +11,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { env } from "@/lib/db/env";
 import { createServerClient } from "@/lib/db/supabaseServer";
+import { resolveIdentity } from "@/lib/rbac/roles";
 
 const EmailSchema = z.string().trim().toLowerCase().email();
 
@@ -32,11 +33,44 @@ export async function sendMagicLink(formData: FormData): Promise<void> {
     },
   });
 
-  if (error && process.env.NODE_ENV === "development") {
-    console.warn(`[auth] signInWithOtp (${email}): ${error.message}`);
+  if (error) {
+    const code = typeof (error as { code?: unknown }).code === "string" ? (error as { code: string }).code : null;
+    const status = typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : null;
+    console.warn("AUTH_SEND_MAGIC_LINK_DIAGNOSTIC", {
+      email,
+      code,
+      status,
+      message: error.message,
+    });
   }
   // In all cases land on /auth/check-email — never reveal whether the email
   // is a known user (prevents enumeration).
 
   redirect(`/auth/check-email?email=${encodeURIComponent(email)}`);
+}
+
+export async function logoutAction(): Promise<void> {
+  const supabase = await createServerClient();
+  await supabase.auth.signOut();
+  redirect("/auth?signed_out=1");
+}
+
+export async function continueCurrentSessionAction(): Promise<void> {
+  const supabase = await createServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/auth?error=callback_failed&reason=session_mismatch");
+  }
+
+  const identity = await resolveIdentity(user.id);
+  redirect(identity.role === "admin" ? "/dashboard" : "/me");
+}
+
+export async function switchAccountAction(): Promise<void> {
+  const supabase = await createServerClient();
+  await supabase.auth.signOut();
+  redirect("/auth?switched_account=1");
 }

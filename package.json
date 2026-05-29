@@ -8,19 +8,22 @@
     "dev": "next dev -p 3030",
     "build": "next build",
     "start": "next start",
+    "env:check": "node scripts/validate-env.mjs build",
+    "env:check:smoke": "node scripts/validate-env.mjs smoke",
+    "env:check:db": "node scripts/validate-env.mjs db",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "db:apply": "node scripts/apply-schemas.mjs",
     "db:reset": "node scripts/reset-and-apply.mjs",
     "db:inspect": "node scripts/inspect-db.mjs",
     "seed:admin": "node scripts/seed-admin.mjs",
-    "storage:setup": "node scripts/setup-storage.mjs"
+    "storage:setup": "node scripts/setup-storage.mjs",
+    "smoke:core-loop": "node scripts/smoke-core-loop.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.46.0",
     "next": "^15.1.0",
-    "openai": "^4.73.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "zod": "^3.23.8"

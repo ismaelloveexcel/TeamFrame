@@ -16,7 +16,21 @@ const DecideSchema = z.object({
   leave_id: z.string().uuid(),
   expected_updated_at: z.string().trim().min(1),
   decision: z.enum(["approved", "rejected"]),
+  return_to: z.string().trim().optional(),
 });
+
+function optionalString(value: FormDataEntryValue | null): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function safeReturnPath(path: string | undefined, fallback: string): string {
+  if (!path || !path.startsWith("/") || path.startsWith("//")) {
+    return fallback;
+  }
+  return path;
+}
 
 function getErrorCode(error: unknown): string {
   if (error instanceof z.ZodError) return "INVALID_INPUT";
@@ -55,6 +69,9 @@ export async function submitLeaveAction(formData: FormData): Promise<void> {
 export async function decideLeaveAction(formData: FormData): Promise<void> {
   let failed = false;
   let errorCode = "UNKNOWN";
+  let leaveId = "";
+  let decision: "approved" | "rejected" = "approved";
+  let returnTo = "/leaves";
 
   try {
     const actor = await requireTenantActor();
@@ -62,7 +79,11 @@ export async function decideLeaveAction(formData: FormData): Promise<void> {
       leave_id: formData.get("leave_id"),
       expected_updated_at: formData.get("expected_updated_at"),
       decision: formData.get("decision"),
+      return_to: optionalString(formData.get("return_to")),
     });
+    leaveId = parsed.leave_id;
+    decision = parsed.decision;
+    returnTo = safeReturnPath(parsed.return_to, "/leaves");
     await decideLeaveRequest(
       actor,
       parsed.leave_id,
@@ -75,7 +96,9 @@ export async function decideLeaveAction(formData: FormData): Promise<void> {
   }
 
   if (failed) {
-    redirect(`/leaves?error=${encodeURIComponent(errorCode)}`);
+    redirect(`${returnTo}?error=${encodeURIComponent(errorCode)}&leave=${encodeURIComponent(leaveId)}`);
   }
-  redirect("/leaves?status=decided");
+  redirect(
+    `${returnTo}?status=decided&decision=${encodeURIComponent(decision)}&leave=${encodeURIComponent(leaveId)}`,
+  );
 }
