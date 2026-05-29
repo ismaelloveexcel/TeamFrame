@@ -1,19 +1,19 @@
 /**
  * Sentry edge-runtime initialisation.
  *
- * Loaded by Next.js for middleware and edge Route Handlers.
- * Edge runtime has a restricted API surface — keep this file minimal.
+ * Loaded by Next.js for middleware and edge Route Handlers via
+ * instrumentation.ts.
  *
  * Rules for this weekend:
  *  - DSN-gated: dormant when SENTRY_DSN is absent
  *  - zero performance tracing
- *  - no beforeSend scrub in edge (scrub.ts uses Set which is fine in edge,
- *    but we err on the side of caution and omit user context only)
+ *  - PII stripped via beforeSend (parity with server/client configs)
  *
  * @see https://docs.sentry.io/platforms/javascript/guides/nextjs/
  */
 
 import * as Sentry from "@sentry/nextjs";
+import { scrubPII } from "@/lib/telemetry/scrub";
 
 const dsn = process.env.SENTRY_DSN;
 
@@ -24,8 +24,12 @@ if (dsn) {
     tracesSampleRate: 0,
 
     beforeSend(event) {
-      // Remove auto-populated user context.
       delete event.user;
+
+      if (event.extra && typeof event.extra === "object") {
+        event.extra = scrubPII(event.extra as Record<string, unknown>);
+      }
+
       return event;
     },
   });

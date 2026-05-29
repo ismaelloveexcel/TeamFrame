@@ -198,9 +198,9 @@ Full table: `docs/launch/no-silent-failures-audit.md`
 
 ## 9. Surprises Encountered
 
-1. **`phase-1a/foundation` not merged to `main`** — The Weekend 2 branch precondition requires `main` to contain `tenancy_rls_v2.sql`. It does not (Weekend 1 PR not yet merged). `phase-1b/reliability` was created off `main` as specified. The Weekend 2 deliverables (Sentry, logger, health) have no code dependency on the RLS changes, so this is safe. Weekend 1 must be merged before `phase-1b/reliability` is merged.
+1. **~~`phase-1a/foundation` not merged to `main`~~** — RESOLVED. `phase-1a/foundation` was merged to `main` via PR #58 (`a93f360`) before this branch was rebased. `phase-1b/reliability` was subsequently rebased onto the updated `main` (zero conflicts) and re-verified (tsc + lint + health probe matrix all pass).
 
-2. **`.env.staging.example` absent on `main`** — This file was created in `phase-1a/foundation` and not yet merged. Cannot modify it from this branch. Documented here; will need updating when branches merge.
+2. **~~`.env.staging.example` absent on `main`~~** — RESOLVED. File now exists on `main` after PR #58 merge.
 
 3. **`NEXT_PUBLIC_SENTRY_DSN` required alongside `SENTRY_DSN`** — The client-side Sentry config (`sentry.client.config.ts`) cannot read server-only env vars. Both must be set to the same DSN value. Added both to `.env.example`.
 
@@ -223,7 +223,7 @@ Full table: `docs/launch/no-silent-failures-audit.md`
 | Fix BUG-2: destructure `error` in `maybeFireActivationCompleted` | D4 BUG | High |
 | Promote audit-log write failures to Sentry in `leaveService`, `onboardingService` | D4 GAP | Medium |
 | Log non-auth errors in `middleware/rbac.ts:getActor()` | D4 GAP | Low |
-| Merge `phase-1a/foundation` → `main` | Precondition | Blocker for this branch |
+| ~~Merge `phase-1a/foundation` → `main`~~ | ~~Precondition~~ | RESOLVED — merged via PR #58 |
 | Provision Sentry DSN and verify test event | D1 PARTIAL | Before launch |
 | Source map upload + `withSentryConfig` wrapper | Deferred | Before launch |
 
@@ -247,4 +247,4 @@ Full table: `docs/launch/no-silent-failures-audit.md`
 - [ ] Source map upload (`SENTRY_AUTH_TOKEN`) — deferred.
 - [ ] Playwright tests for health endpoint — deferred.
 - [ ] Auth subsystem probe in `/api/health` — explicitly deferred (no probe = no false confidence).
-- [ ] `phase-1a/foundation` must be merged to `main` before this branch merges.
+- [x] `phase-1a/foundation` merged to `main` (PR #58, `a93f360`); this branch rebased cleanly.

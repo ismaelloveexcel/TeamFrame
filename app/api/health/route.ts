@@ -81,13 +81,16 @@ async function checkStorage(): Promise<SubsystemStatus> {
 
 /**
  * Constant-time secret comparison.
- * Rejects immediately on length mismatch — the length difference does not
- * meaningfully help an attacker (they could iterate lengths quickly anyway)
- * and this prevents allocating equal-length Buffers for wildly different sizes.
+ * Compares BYTE-length (not String.length / UTF-16 code units) before passing
+ * to timingSafeEqual, which requires equal-byte-length buffers and throws
+ * RangeError otherwise. A non-ASCII header value with the same JS string
+ * length as an ASCII secret would otherwise crash this public endpoint.
  */
 function safeCompareSecret(candidate: string, secret: string): boolean {
-  if (candidate.length !== secret.length) return false;
-  return timingSafeEqual(Buffer.from(candidate), Buffer.from(secret));
+  const candidateBuf = Buffer.from(candidate, "utf8");
+  const secretBuf = Buffer.from(secret, "utf8");
+  if (candidateBuf.length !== secretBuf.length) return false;
+  return timingSafeEqual(candidateBuf, secretBuf);
 }
 
 function isAuthenticated(req: NextRequest): boolean {

@@ -8,7 +8,7 @@
  * Rules:
  *  - keys are matched case-insensitively
  *  - nested objects are recursed up to MAX_DEPTH levels
- *  - arrays are passed through unchanged (individual elements are not inspected)
+ *  - arrays are recursed: object elements are scrubbed, scalars pass through
  *  - never throws
  */
 
@@ -52,10 +52,15 @@ export function scrubPII(
   for (const [key, value] of Object.entries(payload)) {
     if (PII_KEYS.has(key.toLowerCase())) {
       result[key] = "[REDACTED]";
+    } else if (Array.isArray(value)) {
+      result[key] = value.map((item) =>
+        item !== null && typeof item === "object" && !Array.isArray(item)
+          ? scrubPII(item as Record<string, unknown>, _depth + 1)
+          : item,
+      );
     } else if (
       value !== null &&
-      typeof value === "object" &&
-      !Array.isArray(value)
+      typeof value === "object"
     ) {
       result[key] = scrubPII(value as Record<string, unknown>, _depth + 1);
     } else {
