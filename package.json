@@ -18,7 +18,7 @@
     "db:inspect": "node scripts/inspect-db.mjs",
     "setup:staging": "node scripts/setup-staging-project.mjs",
     "db:apply:staging": "node scripts/apply-schemas-staging.mjs",
-    "db:reset:staging": "node scripts/reset-and-apply-staging.mjs --allow-destructive-reset",
+    "db:reset:staging": "node scripts/reset-and-apply-staging.mjs",
     "verify:parity": "node scripts/verify-parity.mjs",
     "verify:rls": "node scripts/verify-rls.mjs",
     "seed:admin": "node scripts/seed-admin.mjs",

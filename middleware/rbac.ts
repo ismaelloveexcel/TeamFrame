@@ -23,9 +23,12 @@ import { resolveIdentity, type Role } from "@/lib/rbac/roles";
  * Added in Phase 1A (Weekend 1) alongside tenancy_rls_v2.sql.
  */
 export class MissingTenantContextError extends Error {
-  readonly code = "MISSING_TENANT_CONTEXT" as const;
+  readonly code = "NO_TENANT_CONTEXT" as const;
   constructor() {
-    super("MISSING_TENANT_CONTEXT: session has no app_metadata.tenant_id");
+    // Message prefix MUST remain "NO_TENANT_CONTEXT" — existing services throw
+    // Error("NO_TENANT_CONTEXT") and UI pages map that exact code via getErrorCode().
+    // Changing the prefix silently degrades the user-facing error message to UNKNOWN.
+    super("NO_TENANT_CONTEXT: session has no app_metadata.tenant_id");
     this.name = "MissingTenantContextError";
   }
 }
