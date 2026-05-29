@@ -91,8 +91,23 @@ async function cleanup() {
     }
   }
 
-  // Delete test companies (CASCADE removes employees, leaves, onboarding_tasks, etc).
-  await adminClient.from("companies").delete().in("slug", [TENANT_A_SLUG, TENANT_B_SLUG]);
+  // companies → employees/leaves/onboarding_tasks/audit_logs use ON DELETE RESTRICT,
+  // so dependents must be deleted before the company row. Order matters.
+  const { data: existingCompanies, error: lookupErr } = await adminClient
+    .from("companies")
+    .select("id")
+    .in("slug", [TENANT_A_SLUG, TENANT_B_SLUG]);
+  if (lookupErr) throw new Error(`[SETUP] Company lookup failed: ${lookupErr.message}`);
+
+  const tenantIds = (existingCompanies ?? []).map((c) => c.id);
+  if (tenantIds.length === 0) return;
+
+  for (const table of ["documents", "audit_logs", "onboarding_tasks", "leaves", "employees"]) {
+    const { error: delErr } = await adminClient.from(table).delete().in("tenant_id", tenantIds);
+    if (delErr) throw new Error(`[SETUP] Failed to clean ${table}: ${delErr.message}`);
+  }
+  const { error: compDelErr } = await adminClient.from("companies").delete().in("id", tenantIds);
+  if (compDelErr) throw new Error(`[SETUP] Failed to delete test companies: ${compDelErr.message}`);
 }
 
 async function seed() {
@@ -378,7 +393,7 @@ async function main() {
       .insert({
         tenant_id:   tenantA.id,
         employee_id: taEmployee.id,
-        type:        "contract",
+        type:        "CONTRACT",
         file_url:    "https://fake.test/doc.pdf",
       })
       .select("id");
