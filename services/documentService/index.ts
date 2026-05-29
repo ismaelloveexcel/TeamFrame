@@ -12,6 +12,8 @@ import "server-only";
 import type { Actor } from "@/middleware/rbac";
 import { randomUUID } from "node:crypto";
 import { createServiceRoleClient } from "@/lib/db/supabaseServer";
+import { logAction } from "@/lib/telemetry/logger";
+import { captureActionError } from "@/lib/telemetry/sentry";
 
 export type DocumentType = "CV" | "CONTRACT" | "JD" | "PHOTO";
 
@@ -99,40 +101,70 @@ export async function uploadDocument(
   actor: Actor,
   input: { employeeId: string; type: DocumentType; file: File },
 ): Promise<DocumentRecord> {
-  requireAdmin(actor);
-  const tenantId = requireTenant(actor);
+  const start = Date.now();
+  const requestId = randomUUID();
 
-  const supabase = createServiceRoleClient();
-  const path = buildStoragePath(tenantId, input.employeeId, input.file.name ?? "document.bin");
-  const bytes = Buffer.from(await input.file.arrayBuffer());
+  try {
+    requireAdmin(actor);
+    const tenantId = requireTenant(actor);
 
-  const { error: uploadError } = await supabase.storage
-    .from(DOCUMENT_BUCKET)
-    .upload(path, bytes, { contentType: input.file.type || "application/octet-stream", upsert: false });
+    const supabase = createServiceRoleClient();
+    const path = buildStoragePath(tenantId, input.employeeId, input.file.name ?? "document.bin");
+    const bytes = Buffer.from(await input.file.arrayBuffer());
 
-  if (uploadError) {
-    throw new Error(`DOCUMENT_UPLOAD_FAILED: ${uploadError.message}`);
+    const { error: uploadError } = await supabase.storage
+      .from(DOCUMENT_BUCKET)
+      .upload(path, bytes, { contentType: input.file.type || "application/octet-stream", upsert: false });
+
+    if (uploadError) {
+      throw new Error(`DOCUMENT_UPLOAD_FAILED: ${uploadError.message}`);
+    }
+
+    const { data, error } = await supabase
+      .from("documents")
+      .insert({
+        tenant_id: tenantId,
+        employee_id: input.employeeId,
+        type: input.type,
+        file_url: path,
+      } as never)
+      .select("id, tenant_id, employee_id, type, file_url, created_at, deleted_at")
+      .single();
+
+    if (error) {
+      await supabase.storage.from(DOCUMENT_BUCKET).remove([path]);
+      throw new Error(`DOCUMENT_RECORD_CREATE_FAILED: ${error.message}`);
+    }
+
+    const created = data as DocumentRow;
+    await writeAudit(actor, "document.uploaded", created.id);
+
+    logAction({
+      action: "uploadDocument",
+      actorUserId: actor.authUserId,
+      actorTenantId: actor.tenantId ?? null,
+      durationMs: Date.now() - start,
+      outcome: "ok",
+      requestId,
+    });
+
+    return toPublicRecord(created);
+  } catch (err) {
+    captureActionError("uploadDocument", err, {
+      actor_user_id: actor.authUserId,
+      actor_tenant_id: actor.tenantId ?? null,
+    });
+    logAction({
+      action: "uploadDocument",
+      actorUserId: actor.authUserId,
+      actorTenantId: actor.tenantId ?? null,
+      durationMs: Date.now() - start,
+      outcome: "fail",
+      error: err,
+      requestId,
+    });
+    throw err;
   }
-
-  const { data, error } = await supabase
-    .from("documents")
-    .insert({
-      tenant_id: tenantId,
-      employee_id: input.employeeId,
-      type: input.type,
-      file_url: path,
-    } as never)
-    .select("id, tenant_id, employee_id, type, file_url, created_at, deleted_at")
-    .single();
-
-  if (error) {
-    await supabase.storage.from(DOCUMENT_BUCKET).remove([path]);
-    throw new Error(`DOCUMENT_RECORD_CREATE_FAILED: ${error.message}`);
-  }
-
-  const created = data as DocumentRow;
-  await writeAudit(actor, "document.uploaded", created.id);
-  return toPublicRecord(created);
 }
 
 export async function getSignedDownloadUrl(

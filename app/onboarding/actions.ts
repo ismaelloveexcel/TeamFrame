@@ -88,8 +88,14 @@ export async function completeOnboardingTaskAction(formData: FormData): Promise<
   let failed = false;
   let errorCode = "UNKNOWN";
 
+  // Observability instrumentation (Phase 1C).
+  const start = Date.now();
+  const requestId = crypto.randomUUID();
+  let actor: Awaited<ReturnType<typeof requireTenantActor>> | null = null;
+  let caughtError: unknown = null;
+
   try {
-    const actor = await requireTenantActor();
+    actor = await requireTenantActor();
     const parsed = CompleteSchema.parse({
       task_id: formData.get("task_id"),
       expected_updated_at: formData.get("expected_updated_at"),
@@ -98,6 +104,33 @@ export async function completeOnboardingTaskAction(formData: FormData): Promise<
   } catch (error) {
     failed = true;
     errorCode = getErrorCode(error);
+    caughtError = error;
+  }
+
+  const durationMs = Date.now() - start;
+  if (caughtError !== null) {
+    captureActionError("completeOnboardingTask", caughtError, {
+      actor_user_id: actor?.authUserId ?? null,
+      actor_tenant_id: actor?.tenantId ?? null,
+    });
+    logAction({
+      action: "completeOnboardingTask",
+      actorUserId: actor?.authUserId ?? null,
+      actorTenantId: actor?.tenantId ?? null,
+      durationMs,
+      outcome: "fail",
+      error: caughtError,
+      requestId,
+    });
+  } else {
+    logAction({
+      action: "completeOnboardingTask",
+      actorUserId: actor!.authUserId,
+      actorTenantId: actor!.tenantId,
+      durationMs,
+      outcome: "ok",
+      requestId,
+    });
   }
 
   if (failed) {

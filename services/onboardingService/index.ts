@@ -10,6 +10,8 @@ import "server-only";
 import type { Actor } from "@/middleware/rbac";
 import { createServiceRoleClient } from "@/lib/db/supabaseServer";
 import { track } from "@/lib/telemetry/track";
+import { logAction } from "@/lib/telemetry/logger";
+import { captureActionError } from "@/lib/telemetry/sentry";
 
 export type OnboardingTaskStatus = "pending" | "completed";
 
@@ -65,11 +67,29 @@ async function writeAudit(actor: Actor, actionType: string, targetId?: string): 
 
 export async function maybeFireActivationCompleted(tenantId: string, userId: string): Promise<void> {
   const supabase = createServiceRoleClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("analytics_events")
     .select("event_name")
     .eq("tenant_id", tenantId)
     .in("event_name", ACTIVATION_WORKFLOW_EVENTS as unknown as string[]);
+
+  if (error) {
+    // Non-fatal: activation completion check failing does not break the user flow,
+    // but a silent DB failure here would block the activation funnel indefinitely.
+    logAction({
+      action: "maybeFireActivationCompleted",
+      actorUserId: userId,
+      actorTenantId: tenantId,
+      durationMs: 0,
+      outcome: "fail",
+      error,
+    });
+    captureActionError("maybeFireActivationCompleted", error, {
+      actor_user_id: userId,
+      actor_tenant_id: tenantId,
+    });
+    return; // Preserve resilience: do not throw to caller.
+  }
 
   const firedNames = new Set((data ?? []).map((r: { event_name: string }) => r.event_name));
   const allFired = ACTIVATION_WORKFLOW_EVENTS.every((e) => firedNames.has(e));

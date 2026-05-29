@@ -72,8 +72,14 @@ export async function createEmployeeAction(formData: FormData): Promise<void> {
   let failed = false;
   let errorCode = "UNKNOWN";
 
+  // Observability instrumentation (Phase 1C).
+  const start = Date.now();
+  const requestId = crypto.randomUUID();
+  let actor: Awaited<ReturnType<typeof requireTenantActor>> | null = null;
+  let caughtError: unknown = null;
+
   try {
-    const actor = await requireTenantActor();
+    actor = await requireTenantActor();
     const parsed = CreateInputSchema.parse({
       full_name: formData.get("full_name"),
       email: formData.get("email"),
@@ -86,6 +92,33 @@ export async function createEmployeeAction(formData: FormData): Promise<void> {
   } catch (error) {
     failed = true;
     errorCode = getErrorCode(error);
+    caughtError = error;
+  }
+
+  const durationMs = Date.now() - start;
+  if (caughtError !== null) {
+    captureActionError("createEmployee", caughtError, {
+      actor_user_id: actor?.authUserId ?? null,
+      actor_tenant_id: actor?.tenantId ?? null,
+    });
+    logAction({
+      action: "createEmployee",
+      actorUserId: actor?.authUserId ?? null,
+      actorTenantId: actor?.tenantId ?? null,
+      durationMs,
+      outcome: "fail",
+      error: caughtError,
+      requestId,
+    });
+  } else {
+    logAction({
+      action: "createEmployee",
+      actorUserId: actor!.authUserId,
+      actorTenantId: actor!.tenantId,
+      durationMs,
+      outcome: "ok",
+      requestId,
+    });
   }
 
   if (failed) {
@@ -170,8 +203,14 @@ export async function archiveEmployeeAction(formData: FormData): Promise<void> {
   let employeeId = "";
   let returnTo = "/employees";
 
+  // Observability instrumentation (Phase 1C).
+  const start = Date.now();
+  const requestId = crypto.randomUUID();
+  let actor: Awaited<ReturnType<typeof requireTenantActor>> | null = null;
+  let caughtError: unknown = null;
+
   try {
-    const actor = await requireTenantActor();
+    actor = await requireTenantActor();
     const parsed = ArchiveInputSchema.parse({
       employee_id: formData.get("employee_id"),
       expected_updated_at: formData.get("expected_updated_at"),
@@ -184,6 +223,34 @@ export async function archiveEmployeeAction(formData: FormData): Promise<void> {
   } catch (error) {
     failed = true;
     errorCode = getErrorCode(error);
+    caughtError = error;
+  }
+
+  const durationMs = Date.now() - start;
+  if (caughtError !== null) {
+    captureActionError("archiveEmployee", caughtError, {
+      actor_user_id: actor?.authUserId ?? null,
+      actor_tenant_id: actor?.tenantId ?? null,
+      employee_id: employeeId || null,
+    });
+    logAction({
+      action: "archiveEmployee",
+      actorUserId: actor?.authUserId ?? null,
+      actorTenantId: actor?.tenantId ?? null,
+      durationMs,
+      outcome: "fail",
+      error: caughtError,
+      requestId,
+    });
+  } else {
+    logAction({
+      action: "archiveEmployee",
+      actorUserId: actor!.authUserId,
+      actorTenantId: actor!.tenantId,
+      durationMs,
+      outcome: "ok",
+      requestId,
+    });
   }
 
   if (failed) {
@@ -199,8 +266,14 @@ export async function reinviteEmployeeAction(formData: FormData): Promise<void> 
   let employeeId = "";
   let returnTo = "/employees";
 
+  // Observability instrumentation (Phase 1C).
+  const start = Date.now();
+  const requestId = crypto.randomUUID();
+  let actor: Awaited<ReturnType<typeof requireTenantActor>> | null = null;
+  let caughtError: unknown = null;
+
   try {
-    const actor = await requireTenantActor();
+    actor = await requireTenantActor();
     const parsed = ReinviteInputSchema.parse({
       employee_id: formData.get("employee_id"),
       return_to: optionalString(formData.get("return_to")),
@@ -212,6 +285,34 @@ export async function reinviteEmployeeAction(formData: FormData): Promise<void> 
   } catch (error) {
     failed = true;
     errorCode = getErrorCode(error);
+    caughtError = error;
+  }
+
+  const durationMs = Date.now() - start;
+  if (caughtError !== null) {
+    captureActionError("reinviteEmployee", caughtError, {
+      actor_user_id: actor?.authUserId ?? null,
+      actor_tenant_id: actor?.tenantId ?? null,
+      employee_id: employeeId || null,
+    });
+    logAction({
+      action: "reinviteEmployee",
+      actorUserId: actor?.authUserId ?? null,
+      actorTenantId: actor?.tenantId ?? null,
+      durationMs,
+      outcome: "fail",
+      error: caughtError,
+      requestId,
+    });
+  } else {
+    logAction({
+      action: "reinviteEmployee",
+      actorUserId: actor!.authUserId,
+      actorTenantId: actor!.tenantId,
+      durationMs,
+      outcome: "ok",
+      requestId,
+    });
   }
 
   if (failed) {
@@ -228,8 +329,14 @@ export async function generateActivationLinkAction(formData: FormData): Promise<
   let returnTo = "/employees";
   let activationLink = "";
 
+  // Observability instrumentation (Phase 1C).
+  const start = Date.now();
+  const requestId = crypto.randomUUID();
+  let actor: Awaited<ReturnType<typeof requireTenantActor>> | null = null;
+  let caughtError: unknown = null;
+
   try {
-    const actor = await requireTenantActor();
+    actor = await requireTenantActor();
     const parsed = ActivationLinkInputSchema.parse({
       employee_id: formData.get("employee_id"),
       return_to: optionalString(formData.get("return_to")),
@@ -242,6 +349,34 @@ export async function generateActivationLinkAction(formData: FormData): Promise<
   } catch (error) {
     failed = true;
     errorCode = getErrorCode(error);
+    caughtError = error;
+  }
+
+  const durationMs = Date.now() - start;
+  if (caughtError !== null) {
+    captureActionError("generateActivationLink", caughtError, {
+      actor_user_id: actor?.authUserId ?? null,
+      actor_tenant_id: actor?.tenantId ?? null,
+      employee_id: employeeId || null,
+    });
+    logAction({
+      action: "generateActivationLink",
+      actorUserId: actor?.authUserId ?? null,
+      actorTenantId: actor?.tenantId ?? null,
+      durationMs,
+      outcome: "fail",
+      error: caughtError,
+      requestId,
+    });
+  } else {
+    logAction({
+      action: "generateActivationLink",
+      actorUserId: actor!.authUserId,
+      actorTenantId: actor!.tenantId,
+      durationMs,
+      outcome: "ok",
+      requestId,
+    });
   }
 
   if (failed) {

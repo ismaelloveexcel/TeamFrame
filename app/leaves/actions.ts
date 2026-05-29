@@ -47,8 +47,14 @@ export async function submitLeaveAction(formData: FormData): Promise<void> {
   let failed = false;
   let errorCode = "UNKNOWN";
 
+  // Observability instrumentation (Phase 1C).
+  const start = Date.now();
+  const requestId = crypto.randomUUID();
+  let actor: Awaited<ReturnType<typeof requireTenantActor>> | null = null;
+  let caughtError: unknown = null;
+
   try {
-    const actor = await requireTenantActor();
+    actor = await requireTenantActor();
     const parsed = SubmitSchema.parse({
       start_date: formData.get("start_date"),
       end_date: formData.get("end_date"),
@@ -60,6 +66,33 @@ export async function submitLeaveAction(formData: FormData): Promise<void> {
   } catch (error) {
     failed = true;
     errorCode = getErrorCode(error);
+    caughtError = error;
+  }
+
+  const durationMs = Date.now() - start;
+  if (caughtError !== null) {
+    captureActionError("submitLeave", caughtError, {
+      actor_user_id: actor?.authUserId ?? null,
+      actor_tenant_id: actor?.tenantId ?? null,
+    });
+    logAction({
+      action: "submitLeave",
+      actorUserId: actor?.authUserId ?? null,
+      actorTenantId: actor?.tenantId ?? null,
+      durationMs,
+      outcome: "fail",
+      error: caughtError,
+      requestId,
+    });
+  } else {
+    logAction({
+      action: "submitLeave",
+      actorUserId: actor!.authUserId,
+      actorTenantId: actor!.tenantId,
+      durationMs,
+      outcome: "ok",
+      requestId,
+    });
   }
 
   if (failed) {
