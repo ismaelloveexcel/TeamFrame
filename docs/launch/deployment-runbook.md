@@ -101,14 +101,13 @@ Expected output:
   ✓ instrumentation.ts imports "./sentry.server.config"
   ✓ instrumentation.ts imports "./sentry.edge.config"
 [PASS] guard-health-contract: public health response contract verified
-  ✓ app/api/health/route.ts exists
-  ✓ Sentinel comment found (char offset ...)
-  ✓ No "subsystems" key in public response section
-  ✓ No "timestamp" key in public response section
-  ✓ Public JSON object has exactly one key: status
-  ✓ Contract regex /^{"status":"(ok|degraded)"}$/ matches:
-      "{"status":"ok"}"
-      "{"status":"degraded"}"
+  ✓ lib/health/contract.mjs exists and exports buildPublicHealthPayload
+  ✓ app/api/health/route.ts imports buildPublicHealthPayload from @/lib/health/contract.mjs
+  ✓ app/api/health/route.ts calls buildPublicHealthPayload(...) as the first arg to NextResponse.json(...)
+  ✓ Helper returns object with exactly one key: "status"
+  ✓ JSON.stringify of helper output matches contract /^\{"status":"(ok|degraded)"\}$/:
+      buildPublicHealthPayload("ok") → {"status":"ok"}
+      buildPublicHealthPayload("degraded") → {"status":"degraded"}
 [PASS] guard-telemetry: all critical mutations have logAction + captureActionError
   ✓ app/employees/actions.ts :: createEmployeeAction
   ...

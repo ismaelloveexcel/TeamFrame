@@ -87,11 +87,26 @@ for (const status of ["ok", "degraded"]) {
   }
 }
 
-// ── 3. Route must import the helper (catches inline-replacement regression) ─
+// ── 3. Route must import the helper AND call it inside the public
+//      NextResponse.json(...) — catches inline-replacement regressions where
+//      the helper import/comment is left intact but the actual response body
+//      is built from a different object.
 
 const routeSrc = readFileSync(join(ROOT, ROUTE_FILE), "utf8");
 
-if (!EXPECTED_IMPORT_RE.test(routeSrc)) {
+// Strip comments before scanning so that words inside explanatory comments
+// (e.g. doc strings that mention buildPublicHealthPayload) cannot satisfy the
+// call-site check.
+const routeSrcNoComments = routeSrc
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+
+// The helper MUST be the first argument to a NextResponse.json(...) call.
+// Whitespace tolerant; rejects any other call shape.
+const PUBLIC_RESPONSE_CALL_RE =
+  /NextResponse\s*\.\s*json\s*\(\s*buildPublicHealthPayload\s*\(/;
+
+if (!EXPECTED_IMPORT_RE.test(routeSrcNoComments)) {
   fail(
     `${ROUTE_FILE} does not import buildPublicHealthPayload from "@/lib/health/contract.mjs".\n` +
       `  The route must use the shared helper so this guard can verify the contract.\n` +
@@ -99,10 +114,12 @@ if (!EXPECTED_IMPORT_RE.test(routeSrc)) {
   );
 }
 
-if (!routeSrc.includes("buildPublicHealthPayload(")) {
+if (!PUBLIC_RESPONSE_CALL_RE.test(routeSrcNoComments)) {
   fail(
-    `${ROUTE_FILE} imports buildPublicHealthPayload but never calls it.\n` +
-      `  The public unauthenticated NextResponse.json() call must use the helper.`,
+    `${ROUTE_FILE} imports buildPublicHealthPayload but does not pass it as the\n` +
+      `  first argument to a NextResponse.json(...) call.\n` +
+      `  The public unauthenticated response body MUST be produced by the helper.\n` +
+      `  Expected pattern matching: ${PUBLIC_RESPONSE_CALL_RE}`,
   );
 }
 
