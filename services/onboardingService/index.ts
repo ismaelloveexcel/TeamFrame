@@ -66,6 +66,7 @@ async function writeAudit(actor: Actor, actionType: string, targetId?: string): 
 }
 
 export async function maybeFireActivationCompleted(tenantId: string, userId: string): Promise<void> {
+  const start = Date.now();
   const supabase = createServiceRoleClient();
   const { data, error } = await supabase
     .from("analytics_events")
@@ -76,11 +77,13 @@ export async function maybeFireActivationCompleted(tenantId: string, userId: str
   if (error) {
     // Non-fatal: activation completion check failing does not break the user flow,
     // but a silent DB failure here would block the activation funnel indefinitely.
+    // durationMs distinguishes a fast permission/validation failure from a slow timeout —
+    // the diagnostic signal the wider Phase 1C instrumentation pass was added for.
     logAction({
       action: "maybeFireActivationCompleted",
       actorUserId: userId,
       actorTenantId: tenantId,
-      durationMs: 0,
+      durationMs: Date.now() - start,
       outcome: "fail",
       error,
     });
