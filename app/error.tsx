@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { logoutAction } from "@/app/auth/actions";
+import { captureActionError } from "@/lib/telemetry/sentry";
 
 export default function GlobalError({
   error,
@@ -12,6 +13,7 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     console.error("APP_ERROR_BOUNDARY", error);
+    captureActionError("app_error_boundary", error, { digest: error.digest });
   }, [error]);
 
   return (
