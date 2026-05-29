@@ -1,3 +1,9 @@
+-- DEPRECATED: This file is superseded by schemas/tenancy_rls_v2.sql (Weekend 1 Phase 1A).
+-- The email-fallback path in current_actor_tenant_id() has been removed in v2.
+-- V2 has been applied to staging. Do NOT re-add the fallback.
+-- Function BODIES below are intentionally unchanged — v2 redefines only
+-- current_actor_tenant_id() and adds a comment on current_actor_email().
+-- Apply v2 AFTER this file. See docs/launch/weekend-1-report.md for context.
 -- TeamFrame V1 — tenant helpers + row level security
 -- These policies are designed for authenticated JWT sessions.
 
