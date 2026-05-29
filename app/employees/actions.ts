@@ -10,6 +10,8 @@ import {
   softDeleteEmployee,
   updateEmployee,
 } from "@/services/employeeService";
+import { logAction } from "@/lib/telemetry/logger";
+import { captureActionError } from "@/lib/telemetry/sentry";
 
 const CreateInputSchema = z.object({
   full_name: z.string().trim().min(1),
@@ -97,8 +99,14 @@ export async function updateEmployeeAction(formData: FormData): Promise<void> {
   let failed = false;
   let errorCode = "UNKNOWN";
 
+  // Observability instrumentation (Phase 1B).
+  const start = Date.now();
+  const requestId = crypto.randomUUID();
+  let actor: Awaited<ReturnType<typeof requireTenantActor>> | null = null;
+  let caughtError: unknown = null;
+
   try {
-    const actor = await requireTenantActor();
+    actor = await requireTenantActor();
     const parsed = UpdateInputSchema.parse({
       employee_id: formData.get("employee_id"),
       expected_updated_at: formData.get("expected_updated_at"),
@@ -120,6 +128,33 @@ export async function updateEmployeeAction(formData: FormData): Promise<void> {
   } catch (error) {
     failed = true;
     errorCode = getErrorCode(error);
+    caughtError = error;
+  }
+
+  const durationMs = Date.now() - start;
+  if (caughtError !== null) {
+    captureActionError("updateEmployee", caughtError, {
+      actor_user_id: actor?.authUserId ?? null,
+      actor_tenant_id: actor?.tenantId ?? null,
+    });
+    logAction({
+      action: "updateEmployee",
+      actorUserId: actor?.authUserId ?? null,
+      actorTenantId: actor?.tenantId ?? null,
+      durationMs,
+      outcome: "fail",
+      error: caughtError,
+      requestId,
+    });
+  } else {
+    logAction({
+      action: "updateEmployee",
+      actorUserId: actor!.authUserId,
+      actorTenantId: actor!.tenantId,
+      durationMs,
+      outcome: "ok",
+      requestId,
+    });
   }
 
   if (failed) {

@@ -26,6 +26,7 @@
     "smoke:core-loop": "node scripts/smoke-core-loop.mjs"
   },
   "dependencies": {
+    "@sentry/nextjs": "^9.47.1",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.46.0",
     "next": "^15.1.0",
