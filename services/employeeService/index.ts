@@ -450,6 +450,17 @@ async function findAuthUserIdByEmail(email: string): Promise<string | null> {
     }
   }
 
+  // Reaching this point means listUsers pagination was exhausted
+  // without finding a match. Future auth users beyond the current
+  // scan cap may be misclassified as new.
+  console.error("EMPLOYEE_INVITE_LISTUSERS_CAP_HIT", {
+    email: normalizedEmail,
+    pagesScanned: 10,
+    usersPerPage: 100,
+    maxScanned: 1000,
+    message:
+      "no match found after exhausting pagination cap; duplicate-invite detection may misclassify this user as new",
+  });
   return null;
 }
 
