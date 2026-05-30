@@ -55,15 +55,7 @@ const MAX_CHAIN_CHARS = 4000;
 // the same table from a different function in the same file still fails.
 // `enclosingFn` matches the nearest preceding `function <name>(` or
 // `async function <name>(` token before the `.from(...)` site.
-const ALLOWLIST = [
-  {
-    file: "services/employeeService/index.ts",
-    table: "employees",
-    enclosingFn: "detectEmployeeTelemetryCapabilities",
-    reason:
-      "Schema-capability probe with .limit(1); not a tenant-scoped read. Tracked as audit IMPORTANT-4 / Move 4.",
-  },
-];
+const ALLOWLIST = [];
 
 // ── Non-DB `.from(...)` patterns that should be ignored entirely ───────────
 // These are not Supabase database queries.
