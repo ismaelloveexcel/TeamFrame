@@ -12,6 +12,7 @@
     "env:check:smoke": "node scripts/validate-env.mjs smoke",
     "env:check:db": "node scripts/validate-env.mjs db",
     "lint": "next lint",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "db:apply": "node scripts/apply-schemas.mjs",
     "db:reset": "node scripts/reset-and-apply.mjs",
@@ -52,7 +53,8 @@
     "pg": "^8.21.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^4.0.0",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.7"
   },
   "engines": {
     "node": ">=20.0.0"
