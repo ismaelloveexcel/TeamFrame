@@ -90,11 +90,6 @@ const SCHEMA_BASELINE = {
   latestFile: "tenancy_rls.sql",
 } as const;
 
-function isColumnMissingMessage(message: string, column: EmployeeTelemetryColumn): boolean {
-  const lower = message.toLowerCase();
-  return lower.includes("does not exist") && lower.includes(column);
-}
-
 function extractMissingTelemetryColumns(message: string): EmployeeTelemetryColumn[] {
   const lower = message.toLowerCase();
   return EMPLOYEE_TELEMETRY_COLUMNS.filter((column) => lower.includes(column));
@@ -133,31 +128,30 @@ async function detectEmployeeTelemetryCapabilities(): Promise<EmployeeTelemetryC
   }
 
   const supabase = createServiceRoleClient();
-  const missingColumns: EmployeeTelemetryColumn[] = [];
+  // Single-shot schema probe: select every telemetry column in one round-trip.
+  // PostgREST validates the SELECT list against the schema regardless of the
+  // WHERE clause, so a sentinel tenant_id that matches no rows still surfaces
+  // any missing-column error and lets the guard see a tenant filter.
+  const SCHEMA_PROBE_TENANT_SENTINEL = "00000000-0000-0000-0000-000000000000";
+  const { error } = await supabase
+    .from("employees")
+    .select(EMPLOYEE_TELEMETRY_COLUMNS.join(","))
+    .eq("tenant_id", SCHEMA_PROBE_TENANT_SENTINEL)
+    .limit(0);
 
-  for (const column of EMPLOYEE_TELEMETRY_COLUMNS) {
-    const { error } = await supabase
-      .from("employees")
-      .select(column)
-      .limit(1);
-
-    if (!error) {
-      continue;
+  let missingColumns: EmployeeTelemetryColumn[] = [];
+  if (error) {
+    const extracted = extractMissingTelemetryColumns(error.message);
+    if (extracted.length > 0) {
+      missingColumns = extracted;
+    } else {
+      missingColumns = [...EMPLOYEE_TELEMETRY_COLUMNS];
+      console.warn("EMPLOYEE_SCHEMA_CAPABILITY_WARN", {
+        mode: "limited_telemetry",
+        reason: "probe_error",
+        message: error.message,
+      });
     }
-
-    if (isColumnMissingMessage(error.message, column)) {
-      missingColumns.push(column);
-      continue;
-    }
-
-    // Unknown schema/probe errors should degrade safely instead of crashing page requests.
-    missingColumns.push(column);
-    console.warn("EMPLOYEE_SCHEMA_CAPABILITY_WARN", {
-      mode: "limited_telemetry",
-      reason: "probe_error",
-      column,
-      message: error.message,
-    });
   }
 
   const capabilities = cacheEmployeeTelemetryCapabilities({
