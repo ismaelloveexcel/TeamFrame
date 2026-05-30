@@ -20,13 +20,15 @@
  *      code cannot mask a violation OR falsely satisfy one.
  *   2. Find each `.from("<table>")` occurrence on a DB client (not
  *      `supabase.storage.from`, not `Buffer.from`, not `Array.from`).
- *   3. Extract the surrounding "chain window" — from the start of the
- *      statement (walking backwards to the previous `;` or `{` at chain
- *      depth 0) to the matching `)` that ends the chain's terminating call.
- *      In practice we use a forward window of N lines from the `.from(`
- *      site, which is sufficient for the linear chain style used in
- *      services/**.
- *   4. Apply the rule above. Report violations with file:line.
+ *   3. Extract the "chain window" — walk forward from the `.from(` site
+ *      with a paren/brace/bracket depth counter, stopping at the first `;`
+ *      at depth 0 (statement terminator) or when depth drops below the
+ *      starting depth (exited the enclosing block). This guarantees a
+ *      later, separate query in the same function cannot satisfy the rule.
+ *   4. Apply the rule above. Allowlist entries are keyed by
+ *      (file, table, enclosingFn) so adding a new unscoped query to the
+ *      same table from a different function still fails.
+ *   5. Report violations with file:line and enclosing function name.
  *
  * Limitations (by design):
  *   - String-based, not AST. Sufficient for the current service-layer style
@@ -45,18 +47,21 @@ import { join, relative, sep } from "node:path";
 
 const ROOT = process.cwd();
 const SERVICES_DIR = join(ROOT, "services");
-const WINDOW_LINES = 40;
+const MAX_CHAIN_CHARS = 4000;
 
-// ── Allowlist — intentional non-tenant-scoped `.from(...)` calls ───────────
+// ── Allowlist — intentional non-tenant-scoped `.from(...)` calls ───────
 //
-// Each entry: { file, table, reason }. A violation matching (file, table)
-// is silenced. Keep this list as short as possible.
+// Keyed by (file, table, enclosingFn) so that adding a new unscoped call to
+// the same table from a different function in the same file still fails.
+// `enclosingFn` matches the nearest preceding `function <name>(` or
+// `async function <name>(` token before the `.from(...)` site.
 const ALLOWLIST = [
   {
     file: "services/employeeService/index.ts",
     table: "employees",
+    enclosingFn: "detectEmployeeTelemetryCapabilities",
     reason:
-      "detectEmployeeTelemetryCapabilities probes column existence with .limit(1); not a tenant-scoped read. Tracked as audit IMPORTANT-4 / Move 4.",
+      "Schema-capability probe with .limit(1); not a tenant-scoped read. Tracked as audit IMPORTANT-4 / Move 4.",
   },
 ];
 
@@ -177,15 +182,48 @@ function lineAt(text, offset) {
   return line;
 }
 
-// ── Forward chain window (N lines after the `.from(` site) ────────────────
+// ── Statement-bounded chain window ───────────────────────────────
+//
+// Walks forward from the `.from(` site tracking paren/brace/bracket depth.
+// Stops at the first `;` encountered at depth 0 (statement terminator)
+// OR at end-of-function (`}` at depth -1 from where we started, i.e. we
+// went below the opening depth and would exit the enclosing block).
+// This guarantees the returned window contains only the current chained
+// expression, so `.eq("tenant_id", ...)` found inside is necessarily on
+// the same chain as the `.from(...)`.
 function chainWindow(text, fromOffset) {
-  let end = fromOffset;
-  let lines = 0;
-  while (end < text.length && lines < WINDOW_LINES) {
-    if (text[end] === "\n") lines++;
-    end++;
+  let i = fromOffset;
+  let depth = 0;
+  const end = Math.min(text.length, fromOffset + MAX_CHAIN_CHARS);
+  while (i < end) {
+    const c = text[i];
+    if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") {
+      depth--;
+      if (depth < 0) break;
+    } else if (c === ";" && depth === 0) {
+      i++;
+      break;
+    }
+    i++;
   }
-  return text.slice(fromOffset, end);
+  return text.slice(fromOffset, i);
+}
+
+// ── Enclosing function name for an offset ────────────────────────
+//
+// Returns the name of the nearest preceding `function <name>(` or
+// `async function <name>(` declaration. Returns null if none found
+// (top-level expression, unusual structure).
+function enclosingFunctionName(src, offset) {
+  const fnRe = /\b(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/g;
+  let name = null;
+  let m;
+  while ((m = fnRe.exec(src)) !== null) {
+    if (m.index >= offset) break;
+    name = m[1];
+  }
+  return name;
 }
 
 // ── Insert/upsert payload check ───────────────────────────────────────────
@@ -224,8 +262,12 @@ function scanFile(absPath) {
 
     if (hasEq || hasInsertWithTenant) continue;
 
+    const enclosingFn = enclosingFunctionName(src, offset);
     const allowed = ALLOWLIST.some(
-      (a) => a.file === rel && a.table === table,
+      (a) =>
+        a.file === rel &&
+        a.table === table &&
+        a.enclosingFn === enclosingFn,
     );
     if (allowed) continue;
 
@@ -233,6 +275,7 @@ function scanFile(absPath) {
       file: rel,
       line: lineAt(src, offset),
       table,
+      enclosingFn: enclosingFn ?? "<top-level>",
     });
   }
 
@@ -246,7 +289,7 @@ function main() {
     const v = scanFile(f);
     for (const item of v) {
       console.error(
-        `TENANCY_GUARD_FAIL: ${item.file}:${item.line} .from("${item.table}") has no .eq("tenant_id", ...) on the chain and no tenant_id in any insert/upsert payload.`,
+        `TENANCY_GUARD_FAIL: ${item.file}:${item.line} (in ${item.enclosingFn}) .from("${item.table}") has no .eq("tenant_id", ...) on the chain and no tenant_id in any insert/upsert payload.`,
       );
       total++;
     }
