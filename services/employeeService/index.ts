@@ -90,9 +90,16 @@ const SCHEMA_BASELINE = {
   latestFile: "tenancy_rls.sql",
 } as const;
 
-function extractMissingTelemetryColumns(message: string): EmployeeTelemetryColumn[] {
+function isSchemaMissingColumnError(message: string): boolean {
+  return message.toLowerCase().includes("does not exist");
+}
+
+function extractMissingTelemetryColumns(
+  message: string,
+  candidates: readonly EmployeeTelemetryColumn[] = EMPLOYEE_TELEMETRY_COLUMNS,
+): EmployeeTelemetryColumn[] {
   const lower = message.toLowerCase();
-  return EMPLOYEE_TELEMETRY_COLUMNS.filter((column) => lower.includes(column));
+  return candidates.filter((column) => lower.includes(column));
 }
 
 function cacheEmployeeTelemetryCapabilities(value: EmployeeTelemetryCapabilities): EmployeeTelemetryCapabilities {
@@ -128,30 +135,64 @@ async function detectEmployeeTelemetryCapabilities(): Promise<EmployeeTelemetryC
   }
 
   const supabase = createServiceRoleClient();
-  // Single-shot schema probe: select every telemetry column in one round-trip.
+  // Multi-column schema probe: ask for all telemetry columns in one round-trip.
   // PostgREST validates the SELECT list against the schema regardless of the
-  // WHERE clause, so a sentinel tenant_id that matches no rows still surfaces
-  // any missing-column error and lets the guard see a tenant filter.
+  // WHERE clause, so the sentinel tenant_id (matches no rows) still surfaces
+  // missing-column errors and lets the static guard see a tenant filter.
+  // PostgREST reports only the first missing column per error, so when a
+  // "does not exist" failure names a known telemetry column we drop it from
+  // the probe set and retry. Best case: 1 round-trip. Worst case (degenerate
+  // migration state with all 5 missing): up to 5 round-trips, matching the
+  // legacy per-column loop's worst case but with the common-path improvement.
   const SCHEMA_PROBE_TENANT_SENTINEL = "00000000-0000-0000-0000-000000000000";
-  const { error } = await supabase
-    .from("employees")
-    .select(EMPLOYEE_TELEMETRY_COLUMNS.join(","))
-    .eq("tenant_id", SCHEMA_PROBE_TENANT_SENTINEL)
-    .limit(0);
+  const missingColumns: EmployeeTelemetryColumn[] = [];
+  let remaining: EmployeeTelemetryColumn[] = [...EMPLOYEE_TELEMETRY_COLUMNS];
 
-  let missingColumns: EmployeeTelemetryColumn[] = [];
-  if (error) {
-    const extracted = extractMissingTelemetryColumns(error.message);
-    if (extracted.length > 0) {
-      missingColumns = extracted;
-    } else {
-      missingColumns = [...EMPLOYEE_TELEMETRY_COLUMNS];
+  while (remaining.length > 0) {
+    const { error } = await supabase
+      .from("employees")
+      .select(remaining.join(","))
+      .eq("tenant_id", SCHEMA_PROBE_TENANT_SENTINEL)
+      .limit(0);
+
+    if (!error) {
+      break;
+    }
+
+    // Only treat as a missing-column signal when Postgres actually said so.
+    // Anything else (permissions, transport, RLS misconfig) must surface as
+    // probe_error and degrade safely without masking operational failures.
+    if (!isSchemaMissingColumnError(error.message)) {
+      for (const column of remaining) {
+        if (!missingColumns.includes(column)) missingColumns.push(column);
+      }
       console.warn("EMPLOYEE_SCHEMA_CAPABILITY_WARN", {
         mode: "limited_telemetry",
         reason: "probe_error",
         message: error.message,
       });
+      break;
     }
+
+    const namedMissing = extractMissingTelemetryColumns(error.message, remaining);
+    if (namedMissing.length === 0) {
+      // does-not-exist error didn't name a telemetry column we recognise:
+      // fall back to safe degradation rather than loop forever.
+      for (const column of remaining) {
+        if (!missingColumns.includes(column)) missingColumns.push(column);
+      }
+      console.warn("EMPLOYEE_SCHEMA_CAPABILITY_WARN", {
+        mode: "limited_telemetry",
+        reason: "probe_error",
+        message: error.message,
+      });
+      break;
+    }
+
+    for (const column of namedMissing) {
+      if (!missingColumns.includes(column)) missingColumns.push(column);
+    }
+    remaining = remaining.filter((column) => !namedMissing.includes(column));
   }
 
   const capabilities = cacheEmployeeTelemetryCapabilities({
