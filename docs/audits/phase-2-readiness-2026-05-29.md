@@ -349,7 +349,9 @@ change + smoke test note.
 
 ### Move 3 — Introduce `vitest` and one negative-tenancy test
 
-**STATUS: ✅ DONE** — shipped via PR [#68](https://github.com/ismaelloveexcel/TeamFrame/pull/68). Added `vitest@^4.1.7` devDependency, `vitest.config.ts`, and `tests/tenancy-isolation.test.ts` (one regression test on `listLeavesForEmployee` asserting exactly one `.eq("tenant_id", actor.tenantId)` filter). Engines bumped to `>=20.19.0` for Vite 8. CI integration deferred (GHA setup overhead exceeds 15s wall-time budget).
+**STATUS: ⚠️ PARTIAL** — shipped via PR [#68](https://github.com/ismaelloveexcel/TeamFrame/pull/68). What landed: `vitest@^4.1.7` devDependency, `vitest.config.ts`, and `tests/tenancy-isolation.test.ts` — a *filter-applied* assertion on `listLeavesForEmployee` against a chainable Supabase mock (asserts `.eq("tenant_id", actor.tenantId)` is called exactly once). Engines bumped to `>=20.19.0` for Vite 8.
+
+**Still owed:** the originally-requested *cross-tenant data-isolation* shape — mock the client to return rows for both tenants A and B, then assert that a call as actor A surfaces only A's rows. The shipped test guards against the filter being **deleted**; the follow-up will guard against the filter not actually **filtering**. CI integration also still owed. Tracked in [#72](https://github.com/ismaelloveexcel/TeamFrame/issues/72).
 
 Add `vitest` as a dev dependency, a `test` script, and one negative-path
 test that imports a service function with `tenantId = X` and asserts it
@@ -398,18 +400,20 @@ PR scope: ~30 line change + cache invariant unchanged.
 |---|---|---|---|
 | 1 | Structural guard for tenancy-filter discipline | [#64](https://github.com/ismaelloveexcel/TeamFrame/pull/64), [#65](https://github.com/ismaelloveexcel/TeamFrame/pull/65) | ✅ |
 | 2 | Pagination-cap warning on `findAuthUserIdByEmail` | [#66](https://github.com/ismaelloveexcel/TeamFrame/pull/66), [#67](https://github.com/ismaelloveexcel/TeamFrame/pull/67) | ✅ |
-| 3 | Vitest harness + negative-tenancy regression test | [#68](https://github.com/ismaelloveexcel/TeamFrame/pull/68) | ✅ |
+| 3 | Vitest harness + negative-tenancy regression test | [#68](https://github.com/ismaelloveexcel/TeamFrame/pull/68) | ⚠️ Partial — see [#72](https://github.com/ismaelloveexcel/TeamFrame/issues/72) |
 | 4 | Collapse telemetry-capability probe (eliminate N+1) | [#69](https://github.com/ismaelloveexcel/TeamFrame/pull/69) | ✅ |
 
 **IMPORTANT-1 → IMPORTANT-4:** all resolved. The `guard-tenancy-filter`
 allowlist is empty as of `754b1ed`; every `.from(...)` chain in
 `services/**/index.ts` is mechanically asserted to carry a tenant filter.
 
-**Known non-blocking follow-up (tracked outside the audit):** the
-tenancy-guard parser does not stop at depth-0 commas, so a `Promise.all([...])`
-literal containing multiple Supabase calls without per-call tenant filters
-could theoretically slip past the guard. Logged as a hardening/tech-debt
-issue; not an audit blocker.
+**Known non-blocking follow-ups (tracked outside the audit):**
+
+- [#70](https://github.com/ismaelloveexcel/TeamFrame/issues/70) — guard-tenancy-filter parser does not stop at depth-0 commas (`Promise.all([...])` blind spot).
+- [#72](https://github.com/ismaelloveexcel/TeamFrame/issues/72) — extend tenancy-isolation test to cross-tenant data-isolation shape + wire `npm test` into CI.
+
+Neither is an audit blocker. Move 3 is marked **PARTIAL** rather than DONE
+to make the deferred work explicit.
 
 **Verdict at closure:** GREEN — unchanged from the original audit. The
 codebase remains operationally fit for Phase 2 feature expansion.
