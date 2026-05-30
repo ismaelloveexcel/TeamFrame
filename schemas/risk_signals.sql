@@ -1,0 +1,11 @@
+-- TeamFrame FPORS — risk_signals
+-- Wave 1 stub. Populated in Wave 2 (Slice 1: missing_contract).
+--
+-- Shape per docs/business/blueprint-locked.md §6 (Object Model):
+--   id, tenant_id, kind, severity ('red'|'yellow'), subject_employee_id,
+--   subject_document_id, evidence jsonb, first_seen_at, last_seen_at,
+--   resolved_at, resolution_action_item_id.
+--
+-- Intentionally empty: the schema will be authored alongside the
+-- signal engine in Wave 2 so the table shape stays honest to the
+-- code that writes it.

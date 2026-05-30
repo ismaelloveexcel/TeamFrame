@@ -104,6 +104,20 @@ create index if not exists employees_auth_user_id_idx on employees(auth_user_id)
 create index if not exists employees_status_idx     on employees(status);
 create index if not exists employees_deleted_at_idx on employees(deleted_at);
 
+-- FPORS pivot (Wave 1): lifecycle + jurisdiction signals
+do $$ begin
+  create type employee_lifecycle_state as enum ('preboarding', 'active', 'exited');
+exception when duplicate_object then null; end $$;
+
+alter table employees add column if not exists lifecycle_state employee_lifecycle_state not null default 'active';
+alter table employees add column if not exists start_date date;
+alter table employees add column if not exists end_date date;
+alter table employees add column if not exists country text;
+
+create index if not exists employees_lifecycle_state_idx on employees(lifecycle_state);
+create index if not exists employees_start_date_idx on employees(start_date);
+create index if not exists employees_end_date_idx on employees(end_date);
+
 create or replace function employees_touch_updated_at()
 returns trigger
 language plpgsql

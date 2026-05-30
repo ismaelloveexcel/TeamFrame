@@ -1,12 +1,9 @@
 import { requireTenantActor } from "@/middleware/rbac";
-import { OrgChart } from "@/components/OrgChart";
 import { PendingSubmitButton } from "@/components/PendingSubmitButton";
 import { ConfirmSubmitButton } from "@/components/ConfirmSubmitButton";
 import {
-  getEmployeeTelemetryCapabilities,
   INVITE_RESEND_COOLDOWN_SECONDS,
   listEmployeesForAdmin,
-  listOrgChart,
 } from "@/services/employeeService";
 import Link from "next/link";
 import { CopyInviteEmailButton } from "./CopyInviteEmailButton";
@@ -86,36 +83,26 @@ export default async function EmployeesPage({
   const errorMessage = error ? (ERROR_COPY[error] ?? ERROR_COPY.UNKNOWN) : null;
 
   if (actor.role !== "admin") {
-    const employees = await listOrgChart(actor);
     return (
-      <main className="mx-auto max-w-5xl px-6 py-14">
+      <main className="mx-auto max-w-3xl px-6 py-14">
         <nav className="mb-6 flex gap-4 text-[14px] text-ink-500">
-          <Link href="/me" className="hover:text-ink-900 transition">My space</Link>
-          <span className="text-ink-900 font-medium">Employees</span>
-          <Link href="/org-chart" className="hover:text-ink-900 transition">Org chart</Link>
+          <Link href="/dashboard" className="hover:text-ink-900 transition">Dashboard</Link>
+          <span className="text-ink-900 font-medium">Team roster</span>
           <Link href="/onboarding" className="hover:text-ink-900 transition">Onboarding</Link>
           <Link href="/leaves" className="hover:text-ink-900 transition">Leaves</Link>
         </nav>
-        <div className="flex flex-wrap items-end justify-between gap-4 border-b border-ink-300/60 pb-5">
-          <div className="space-y-2">
-            <p className="text-[12px] tracking-[0.14em] text-ink-500">Directory</p>
-            <h1 className="text-[34px] leading-tight tracking-tight">People map</h1>
-          </div>
+        <div className="space-y-2 border-b border-ink-300/60 pb-5">
+          <p className="text-[12px] tracking-[0.14em] text-ink-500">Restricted</p>
+          <h1 className="text-[34px] leading-tight tracking-tight">Team roster</h1>
         </div>
         <p className="mt-7 max-w-prose text-[15px] text-ink-700">
-          Team structure with role, department, and reporting lines.
+          The team roster is admin-only in TeamFrame. Ask your founder or admin to share what you need.
         </p>
-        <section className="mt-9">
-          <OrgChart employees={employees} />
-        </section>
       </main>
     );
   }
 
-  const [employees, telemetryCapabilities] = await Promise.all([
-    listEmployeesForAdmin(actor),
-    getEmployeeTelemetryCapabilities(actor),
-  ]);
+  const employees = await listEmployeesForAdmin(actor);
   const invitePending = employees.filter((e) => e.status !== "inactive" && e.setup_status === "incomplete").length;
   const inviteSent = employees.filter((e) => e.status !== "inactive" && e.setup_status === "ready").length;
   const inviteActivated = employees.filter((e) => e.setup_status === "active").length;
@@ -179,36 +166,21 @@ export default async function EmployeesPage({
   return (
     <main className="mx-auto max-w-6xl px-6 py-14">
       <nav className="mb-6 flex gap-4 text-[14px] text-ink-500">
-        <span className="text-ink-900 font-medium">Employees</span>
-        <Link href="/org-chart" className="hover:text-ink-900 transition">Org chart</Link>
+        <Link href="/dashboard" className="hover:text-ink-900 transition">Dashboard</Link>
+        <span className="text-ink-900 font-medium">Team roster</span>
         <Link href="/onboarding" className="hover:text-ink-900 transition">Onboarding</Link>
         <Link href="/leaves" className="hover:text-ink-900 transition">Leaves</Link>
       </nav>
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-ink-300/60 pb-5">
         <div className="space-y-2">
           <p className="text-[12px] tracking-[0.14em] text-ink-500">Admin queue</p>
-          <h1 className="text-[34px] leading-tight tracking-tight">Employee pipeline</h1>
+          <h1 className="text-[34px] leading-tight tracking-tight">Team roster</h1>
         </div>
       </div>
 
       <p className="mt-7 max-w-2xl text-[15px] text-ink-700">
         Add teammates, track invite progress, and keep onboarding moving from one place.
       </p>
-
-      <div className="mt-4 rounded-lg border border-ink-300/70 bg-white/70 px-4 py-3 text-[13px] text-ink-700">
-        <p>
-          Schema visibility: checked {formatDateTime(telemetryCapabilities.checkedAt)} against {telemetryCapabilities.schemaBaseline.totalFiles} expected schema files.
-        </p>
-        <p className="mt-1 text-[12px] text-ink-500">
-          Latest expected migration file: {telemetryCapabilities.schemaBaseline.latestFile}.
-        </p>
-      </div>
-
-      {telemetryCapabilities.limitedMode ? (
-        <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
-          Limited telemetry mode: invite diagnostics are partially unavailable because schema columns are missing ({telemetryCapabilities.missingColumns.join(", ")}).
-        </p>
-      ) : null}
 
       <section className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <article className="rounded-xl border border-ink-300/70 bg-white/75 p-4">

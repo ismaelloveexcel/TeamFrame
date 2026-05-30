@@ -1,1 +1,0 @@
-export { OrgChart } from "./OrgChart";

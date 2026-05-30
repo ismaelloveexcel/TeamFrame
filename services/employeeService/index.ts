@@ -303,17 +303,6 @@ function requireAdmin(actor: Actor): void {
   }
 }
 
-function toOrgChartEmployee(row: EmployeeRow): OrgChartEmployee {
-  return {
-    id: row.id,
-    full_name: row.full_name,
-    role_title: row.role_title,
-    department: row.department,
-    manager_id: row.manager_id,
-    status: row.status,
-  };
-}
-
 function toEmployeeFullRecord(row: EmployeeRow): EmployeeFullRecord {
   const maybeTelemetry = row as EmployeeRow & {
     invite_attempt_count?: number;
@@ -755,23 +744,6 @@ async function writeAudit(
     }
     console.error("AUDIT_LOG_WRITE_FAILED", error.message);
   }
-}
-
-export async function listOrgChart(actor: Actor): Promise<OrgChartEmployee[]> {
-  const tenantId = requireTenant(actor);
-  const supabase = createServiceRoleClient();
-  const { data, error } = await supabase
-    .from("employees")
-    .select("id, full_name, role_title, department, manager_id, status, tenant_id")
-    .eq("tenant_id", tenantId)
-    .is("deleted_at", null)
-    .order("full_name", { ascending: true });
-
-  if (error) {
-    throw new Error(`EMPLOYEE_LIST_FAILED: ${error.message}`);
-  }
-
-  return ((data ?? []) as EmployeeRow[]).map(toOrgChartEmployee);
 }
 
 export async function getEmployee(
