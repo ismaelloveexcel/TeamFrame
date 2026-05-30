@@ -23,8 +23,10 @@ average (5-run median). All guards pass, `tsc --noEmit` is clean in 11 s cold
 median, and the smoke loop is idempotent. No blockers were found. The system
 is operationally fit to expand into Phase 2 feature work.
 
-**Verdict: GREEN.** Triggered by rubric *"0 blockers, ≤3 importants"*
-(3 importants logged in §3).
+**Verdict: GREEN.** Originally triggered by rubric *"0 blockers, ≤3 importants"*
+(3 importants logged in §3). A 4th important (IMPORTANT-4: telemetry-probe
+N+1) was added post-merge as an erratum — see §9.1 and §10 Move 4. Verdict
+unchanged: no blockers, scaling impact bounded by cache, fix tracked.
 
 ## 2. Strengths
 
@@ -77,7 +79,7 @@ is operationally fit to expand into Phase 2 feature work.
 
 ## 3. Critical Risks
 
-No blockers. Three importants:
+No blockers. Four importants (IMPORTANT-4 added post-merge — see §9.1):
 
 ### IMPORTANT-1: Tenancy filter discipline is review-enforced, not test-enforced
 
@@ -119,6 +121,19 @@ discipline noted in IMPORTANT-1, or the RLS contract in
 `schemas/tenancy_rls_v2.sql`, will benefit from a thin assertion harness —
 e.g. negative tests asserting `supabase.from(...).eq("tenant_id", X).select`
 returns no rows for tenant `Y`.
+
+### IMPORTANT-4: Telemetry-capability probe is N+1 (added post-merge)
+
+`services/employeeService/index.ts:127-160` —
+`detectEmployeeTelemetryCapabilities` runs
+`await supabase.from("employees").select(column).limit(1)` inside
+`for (const column of EMPLOYEE_TELEMETRY_COLUMNS)`. One round-trip per
+telemetry column on every cache miss. `listEmployeesForAdmin` invokes the
+probe before listing, so the first admin page load after each cache expiry
+pays N round-trips. Bounded by the cache TTL and the column allowlist, but
+still an avoidable serial hot path. Fix tracked as §10 Move 4 (parallelize
+with `Promise.all`, or replace with single `information_schema.columns`
+query).
 
 ## 4. Tech Debt
 
@@ -243,11 +258,23 @@ maps, no `withSentryConfig`, no APM tracing. All are accepted Phase 1 trade-offs
 
 ### 9.1 N+1 query patterns
 
-No `await supabase…` inside `for`/`forEach`/`map` loops detected in
-`services/**` or `app/**/actions.ts`. The only multi-query path in a single
-action is `submitLeaveRequest` → insert + `select count`
-(`services/leaveService/index.ts:145-160`), which is a one-time activation
-trigger and cheap. Listing functions use `.in(...)` batches
+**Erratum (2026-05-29, post-merge)**: The original statement that no
+`await supabase…` inside `for`/`forEach`/`map` loops exists is **incorrect**.
+`detectEmployeeTelemetryCapabilities` in
+`services/employeeService/index.ts:127-160` runs `await supabase.from("employees").select(column).limit(1)`
+inside `for (const column of EMPLOYEE_TELEMETRY_COLUMNS)` — one round-trip
+per telemetry column on every cache miss. `listEmployeesForAdmin` invokes
+that probe before listing, so the first admin page load after each cache
+expiry pays N round-trips (where N = number of telemetry columns probed).
+
+Impact is bounded — the result is cached and the probe only runs on miss —
+but the claim should not have appeared in a readiness audit. Tracked as
+IMPORTANT-4 in §10. Mitigations: parallelize with `Promise.all`, or replace
+the per-column probe with a single `information_schema.columns` query.
+
+Other multi-query paths: `submitLeaveRequest` → insert + `select count`
+(`services/leaveService/index.ts:145-160`), one-time activation trigger,
+cheap. Listing functions use `.in(...)` batches
 (`services/activationService/index.ts:108-156`).
 
 ### 9.2 Pagination
@@ -316,6 +343,17 @@ returns zero rows for data in tenant `Y` (using the smoke-loop's staging
 client). This creates the harness needed for Phase 2 safety tests without
 committing to any feature behaviour. PR scope: 1 dev-dep + 1 `vitest.config.ts`
 + 1 test file + 1 CI job stub.
+
+### Move 4 (added post-audit) — Fix `detectEmployeeTelemetryCapabilities` N+1
+
+`services/employeeService/index.ts:127-160` issues one
+`await supabase.from("employees").select(column).limit(1)` per telemetry
+column inside a `for` loop on every cache miss. Replace with either (a)
+`Promise.all` over the same probes (preserves error attribution per column),
+or (b) a single `information_schema.columns` query keyed by
+`table_name = 'employees'` and the column allowlist. Option (b) is cheaper
+and more correct but requires service-role schema-introspection privilege.
+PR scope: ~30 line change + cache invariant unchanged.
 
 ---
 
