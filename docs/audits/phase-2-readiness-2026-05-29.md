@@ -410,9 +410,10 @@ allowlist is empty as of `754b1ed`; every `.from(...)` chain in
 **Known non-blocking follow-ups (tracked outside the audit):**
 
 - [#70](https://github.com/ismaelloveexcel/TeamFrame/issues/70) — guard-tenancy-filter parser does not stop at depth-0 commas (`Promise.all([...])` blind spot).
-- ~~[#72](https://github.com/ismaelloveexcel/TeamFrame/issues/72)~~ — *Closed* by PR [#75](https://github.com/ismaelloveexcel/TeamFrame/pull/75). Cross-tenant data-isolation test landed; `npm test` CI wiring remains a small follow-up.
+- ~~[#72](https://github.com/ismaelloveexcel/TeamFrame/issues/72)~~ — *Closed* by PR [#75](https://github.com/ismaelloveexcel/TeamFrame/pull/75). Cross-tenant data-isolation test landed.
+- [#77](https://github.com/ismaelloveexcel/TeamFrame/issues/77) — wire `npm test` into the CI Gate Chain so the vitest tenancy regression suite cannot silently rot. Tracked as the Move 3 closing item.
 
-The remaining open follow-up (#70) is not an audit blocker.
+Neither remaining open follow-up (#70, #77) is an audit blocker.
 
 **Verdict at closure:** GREEN — unchanged from the original audit. The
 codebase remains operationally fit for Phase 2 feature expansion.
