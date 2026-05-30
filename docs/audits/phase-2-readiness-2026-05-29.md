@@ -349,9 +349,9 @@ change + smoke test note.
 
 ### Move 3 — Introduce `vitest` and one negative-tenancy test
 
-**STATUS: ✅ DONE** — shipped via PR [#68](https://github.com/ismaelloveexcel/TeamFrame/pull/68) (filter-applied test) and completed via PR [#75](https://github.com/ismaelloveexcel/TeamFrame/pull/75) (cross-tenant data-isolation). What landed: `vitest@^4.1.7` devDependency, `vitest.config.ts`, `tests/tenancy-isolation.test.ts` (asserts `.eq("tenant_id", actor.tenantId)` is called exactly once on `listLeavesForEmployee`), and `tests/cross-tenant-isolation.test.ts` (filtering fake Supabase builder over a mixed TENANT_A/TENANT_B dataset, four assertions covering both `listLeavesForEmployee` and `listPendingLeavesWithEmployee` from each tenant). Engines bumped to `>=20.19.0` for Vite 8.
+**STATUS: ✅ DONE** — shipped via PR [#68](https://github.com/ismaelloveexcel/TeamFrame/pull/68) (filter-applied test), PR [#75](https://github.com/ismaelloveexcel/TeamFrame/pull/75) (cross-tenant data-isolation), and the npm-test-in-CI wiring (closes [#77](https://github.com/ismaelloveexcel/TeamFrame/issues/77)). What landed: `vitest@^4.1.7` devDependency, `vitest.config.ts`, `tests/tenancy-isolation.test.ts` (asserts `.eq("tenant_id", actor.tenantId)` is called exactly once on `listLeavesForEmployee`), `tests/cross-tenant-isolation.test.ts` (filtering fake Supabase builder over a mixed TENANT_A/TENANT_B dataset, four assertions covering both `listLeavesForEmployee` and `listPendingLeavesWithEmployee` from each tenant), and a `Test (vitest)` step added to the Gate Chain (Strict) workflow so the suite cannot silently rot. Engines bumped to `>=20.19.0` for Vite 8.
 
-Mutation-tested locally before merging #75: removing the `.eq("tenant_id", tenantId)` lines causes the new tests to fail loudly with the TENANT_B row leaking into the TENANT_A result. CI integration of `npm test` remains the only follow-up — tracked separately.
+Mutation-tested locally before merging #75: removing the `.eq("tenant_id", tenantId)` lines causes the new tests to fail loudly with the TENANT_B row leaking into the TENANT_A result.
 
 Add `vitest` as a dev dependency, a `test` script, and one negative-path
 test that imports a service function with `tenantId = X` and asserts it
@@ -411,9 +411,9 @@ allowlist is empty as of `754b1ed`; every `.from(...)` chain in
 
 - [#70](https://github.com/ismaelloveexcel/TeamFrame/issues/70) — guard-tenancy-filter parser does not stop at depth-0 commas (`Promise.all([...])` blind spot).
 - ~~[#72](https://github.com/ismaelloveexcel/TeamFrame/issues/72)~~ — *Closed* by PR [#75](https://github.com/ismaelloveexcel/TeamFrame/pull/75). Cross-tenant data-isolation test landed.
-- [#77](https://github.com/ismaelloveexcel/TeamFrame/issues/77) — wire `npm test` into the CI Gate Chain so the vitest tenancy regression suite cannot silently rot. Tracked as the Move 3 closing item.
+- ~~[#77](https://github.com/ismaelloveexcel/TeamFrame/issues/77)~~ — *Closed* by the same PR that closes this loop: `npm test` is now part of the Gate Chain (Strict) workflow.
 
-Neither remaining open follow-up (#70, #77) is an audit blocker.
+The remaining open follow-up (#70) is not an audit blocker.
 
 **Verdict at closure:** GREEN — unchanged from the original audit. The
 codebase remains operationally fit for Phase 2 feature expansion.
