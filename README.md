@@ -144,7 +144,7 @@ No AI provider in V1. No alternate auth provider. No alternate DB. Switching any
 ## Setup instructions
 
 ### 1. Prerequisites
-- Node.js 20+
+- Node.js 20.19+ (required by Vitest/Vite toolchain)
 - A Supabase project (Postgres + Storage + Auth)
 
 ### 2. Clone and install
