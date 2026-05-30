@@ -4,9 +4,17 @@ audited_sha: e7b3b28201791a40baf3c3d6557655d086099cab
 audited_at: 2026-05-29T17:33:33Z
 auditor: subagent
 verdict: GREEN
+status: CLOSED
+closed_at: 2026-05-30T00:00:00Z
+closed_sha: 754b1edb
 ---
 
 # Phase 2 Readiness Audit — TeamFrame
+
+> **STATUS: CLOSED / COMPLETED (2026-05-30).** All four follow-up Moves
+> shipped to `main` at `754b1ed`. The audit verdict remains GREEN and no
+> outstanding blockers, importants, or audit-tracked moves remain. See
+> [§11 Closure](#11-closure) for the per-move PR map and final state.
 
 Read-only review of TeamFrame at SHA `e7b3b28`. Scope: determine whether the
 codebase is operationally ready for Phase 2 feature expansion without
@@ -319,6 +327,8 @@ PR ≤ 300 lines of code excluding documentation. Apply strictly in order.
 
 ### Move 1 — Add a structural guard for tenancy filter discipline
 
+**STATUS: ✅ DONE** — shipped via PRs [#64](https://github.com/ismaelloveexcel/TeamFrame/pull/64) (initial guard) and [#65](https://github.com/ismaelloveexcel/TeamFrame/pull/65) (tightening: statement-bounded window + per-function allowlist).
+
 Add `scripts/guard-tenancy-filter.mjs` and wire it into
 `npm run guards`. Walk `services/**/index.ts`, find each `.from("<table>")`
 chain, and assert the same chain contains `.eq("tenant_id"`. Allowlist
@@ -329,6 +339,8 @@ docs paragraph.
 
 ### Move 2 — Cap `findAuthUserIdByEmail` and emit a warning when the cap is hit
 
+**STATUS: ✅ DONE** — shipped via PRs [#66](https://github.com/ismaelloveexcel/TeamFrame/pull/66) (initial warn) and [#67](https://github.com/ismaelloveexcel/TeamFrame/pull/67) (warn-level + derive maxScanned).
+
 In `services/employeeService/index.ts:434-460`, log
 `EMPLOYEE_INVITE_LISTUSERS_CAP_HIT` (with tenantId, attempted page count)
 when the 10-page loop exits without a match. This makes IMPORTANT-2 visible
@@ -336,6 +348,8 @@ in logs before it becomes a Phase 2 correctness bug. PR scope: ~15 line
 change + smoke test note.
 
 ### Move 3 — Introduce `vitest` and one negative-tenancy test
+
+**STATUS: ✅ DONE** — shipped via PR [#68](https://github.com/ismaelloveexcel/TeamFrame/pull/68). Added `vitest@^4.1.7` devDependency, `vitest.config.ts`, and `tests/tenancy-isolation.test.ts` (one regression test on `listLeavesForEmployee` asserting exactly one `.eq("tenant_id", actor.tenantId)` filter). Engines bumped to `>=20.19.0` for Vite 8. CI integration deferred (GHA setup overhead exceeds 15s wall-time budget).
 
 Add `vitest` as a dev dependency, a `test` script, and one negative-path
 test that imports a service function with `tenantId = X` and asserts it
@@ -345,6 +359,8 @@ committing to any feature behaviour. PR scope: 1 dev-dep + 1 `vitest.config.ts`
 + 1 test file + 1 CI job stub.
 
 ### Move 4 (added post-audit) — Fix `detectEmployeeTelemetryCapabilities` N+1
+
+**STATUS: ✅ DONE** — shipped via PR [#69](https://github.com/ismaelloveexcel/TeamFrame/pull/69). Collapsed the 5-iteration per-column probe loop into a single multi-column `.select(...).eq("tenant_id", sentinel).limit(0)`. With a retry-on-missing-column path for the degenerate all-missing case (max 5 round-trips, matches legacy worst case) and a restored `isSchemaMissingColumnError` gate to avoid misclassifying RLS/permission errors. Production case: 1 round-trip per cache miss. Allowlist exemption removed — `scripts/guard-tenancy-filter.mjs` `ALLOWLIST` is now empty.
 
 `services/employeeService/index.ts:127-160` issues one
 `await supabase.from("employees").select(column).limit(1)` per telemetry
@@ -373,3 +389,27 @@ PR scope: ~30 line change + cache invariant unchanged.
   by inspection.
 - `tsconfig.tsbuildinfo` deletion was performed three times during the cold
   `tsc` measurements; no other file system state was modified by this audit.
+
+## 11. Closure
+
+**Closed:** 2026-05-30. **Final audited state:** `main` at `754b1ed`.
+
+| Move | Description | PR(s) | Status |
+|---|---|---|---|
+| 1 | Structural guard for tenancy-filter discipline | [#64](https://github.com/ismaelloveexcel/TeamFrame/pull/64), [#65](https://github.com/ismaelloveexcel/TeamFrame/pull/65) | ✅ |
+| 2 | Pagination-cap warning on `findAuthUserIdByEmail` | [#66](https://github.com/ismaelloveexcel/TeamFrame/pull/66), [#67](https://github.com/ismaelloveexcel/TeamFrame/pull/67) | ✅ |
+| 3 | Vitest harness + negative-tenancy regression test | [#68](https://github.com/ismaelloveexcel/TeamFrame/pull/68) | ✅ |
+| 4 | Collapse telemetry-capability probe (eliminate N+1) | [#69](https://github.com/ismaelloveexcel/TeamFrame/pull/69) | ✅ |
+
+**IMPORTANT-1 → IMPORTANT-4:** all resolved. The `guard-tenancy-filter`
+allowlist is empty as of `754b1ed`; every `.from(...)` chain in
+`services/**/index.ts` is mechanically asserted to carry a tenant filter.
+
+**Known non-blocking follow-up (tracked outside the audit):** the
+tenancy-guard parser does not stop at depth-0 commas, so a `Promise.all([...])`
+literal containing multiple Supabase calls without per-call tenant filters
+could theoretically slip past the guard. Logged as a hardening/tech-debt
+issue; not an audit blocker.
+
+**Verdict at closure:** GREEN — unchanged from the original audit. The
+codebase remains operationally fit for Phase 2 feature expansion.
