@@ -83,6 +83,8 @@ let employeeTelemetryCapabilitiesCache:
   | null = null;
 
 const EMPLOYEE_TELEMETRY_CACHE_TTL_MS = 5 * 60 * 1000;
+const MAX_LISTUSERS_PAGES = 10;
+const LISTUSERS_PAGE_SIZE = 100;
 const SCHEMA_BASELINE = {
   totalFiles: 14,
   latestFile: "tenancy_rls.sql",
@@ -432,8 +434,8 @@ async function findAuthUserIdByEmail(email: string): Promise<string | null> {
   const supabase = createServiceRoleClient();
   const normalizedEmail = email.toLowerCase();
 
-  for (let page = 1; page <= 10; page += 1) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 100 });
+  for (let page = 1; page <= MAX_LISTUSERS_PAGES; page += 1) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: LISTUSERS_PAGE_SIZE });
     if (error) {
       console.error("EMPLOYEE_INVITE_LIST_USERS_FAILED", error.message);
       return null;
@@ -445,7 +447,7 @@ async function findAuthUserIdByEmail(email: string): Promise<string | null> {
       return match.id;
     }
 
-    if (users.length < 100) {
+    if (users.length < LISTUSERS_PAGE_SIZE) {
       return null;
     }
   }
@@ -453,11 +455,11 @@ async function findAuthUserIdByEmail(email: string): Promise<string | null> {
   // Reaching this point means listUsers pagination was exhausted
   // without finding a match. Future auth users beyond the current
   // scan cap may be misclassified as new.
-  console.error("EMPLOYEE_INVITE_LISTUSERS_CAP_HIT", {
+  console.warn("EMPLOYEE_INVITE_LISTUSERS_CAP_HIT", {
     email: normalizedEmail,
-    pagesScanned: 10,
-    usersPerPage: 100,
-    maxScanned: 1000,
+    pagesScanned: MAX_LISTUSERS_PAGES,
+    usersPerPage: LISTUSERS_PAGE_SIZE,
+    maxScanned: MAX_LISTUSERS_PAGES * LISTUSERS_PAGE_SIZE,
     message:
       "no match found after exhausting pagination cap; duplicate-invite detection may misclassify this user as new",
   });
