@@ -16,7 +16,7 @@ import { createServerClient } from "@/lib/db/supabaseServer";
 import { resolveIdentity } from "@/lib/rbac/roles";
 import { track } from "@/lib/telemetry/track";
 
-const NEXT_ALLOWLIST = ["/dashboard", "/employees", "/org-chart", "/leaves", "/onboarding", "/me"] as const;
+const NEXT_ALLOWLIST = ["/dashboard", "/employees", "/leaves", "/onboarding"] as const;
 
 type NextResolution = {
   next: string;
@@ -39,8 +39,8 @@ function safeNext(raw: string | null): NextResolution {
   return { next: search ? `${pathname}?${search}` : pathname, isStale: false };
 }
 
-function defaultNextForRole(role: "admin" | "employee"): string {
-  return role === "employee" ? "/me" : "/dashboard";
+function defaultNextForRole(): string {
+  return "/dashboard";
 }
 
 type CookieWipe = "none" | "verifier" | "all";
@@ -202,7 +202,7 @@ async function resolveSignedInDestination(userId: string) {
   }
   return {
     identity,
-    path: defaultNextForRole(identity.role),
+    path: defaultNextForRole(),
   };
 }
 
@@ -453,11 +453,11 @@ export async function GET(request: NextRequest) {
     tenant_id: identity.tenantId,
     used_token_hash: Boolean(tokenHash),
     used_code: Boolean(code),
-    next: next || defaultNextForRole(identity.role),
+    next: next || defaultNextForRole(),
   });
 
   // Wipe leftover PKCE code-verifier cookies (NOT auth-token) after success.
-  const response = redirectTo(origin, next || defaultNextForRole(identity.role), request, "verifier");
+  const response = redirectTo(origin, next || defaultNextForRole(), request, "verifier");
   if (tokenHash) {
     response.cookies.set("tf_last_used_magiclink", tokenHash, {
       httpOnly: true,

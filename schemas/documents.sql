@@ -37,3 +37,14 @@ create index if not exists documents_employee_id_idx on documents(employee_id);
 create index if not exists documents_tenant_id_idx   on documents(tenant_id);
 create index if not exists documents_type_idx        on documents(type);
 create index if not exists documents_deleted_at_idx  on documents(deleted_at);
+
+-- FPORS pivot (Wave 1): expiry + signature tracking for document-expiry signals.
+-- subject_person_id mirrors employee_id today; once the Person model lands
+-- it will let a document attach to a non-employee subject (founder, contractor).
+alter table documents add column if not exists expires_at timestamptz;
+alter table documents add column if not exists signed_at timestamptz;
+alter table documents add column if not exists subject_person_id uuid;
+
+create index if not exists documents_expires_at_idx on documents(expires_at);
+create index if not exists documents_signed_at_idx on documents(signed_at);
+create index if not exists documents_subject_person_id_idx on documents(subject_person_id);

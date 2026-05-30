@@ -52,7 +52,6 @@ const TENANT_TABLES = [
   "compensation",
   "documents",
   "leaves",
-  "company_updates",
   "audit_logs",
   "analytics_events",
   "onboarding_tasks",

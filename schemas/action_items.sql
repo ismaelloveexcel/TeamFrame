@@ -1,0 +1,9 @@
+-- TeamFrame FPORS — action_items
+-- Wave 1 stub. Populated in Wave 2 (Slice 1: missing_contract).
+--
+-- Shape per docs/business/blueprint-locked.md §6 (Object Model):
+--   id, tenant_id, risk_signal_id, title, suggested_action,
+--   status ('open'|'in_progress'|'done'|'dismissed'),
+--   created_at, updated_at, resolved_at, resolved_by_user_id.
+--
+-- Intentionally empty: authored alongside the resolution flow in Wave 2.

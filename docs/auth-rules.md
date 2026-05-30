@@ -105,7 +105,7 @@ Manual round-trip — all must pass:
 - [ ] Cross-browser click works (link issued in browser A, opened in browser B)
 - [ ] No infinite redirect loop after successful login
 - [ ] Logout → login again works in the same browser session
-- [ ] Admin lands on `/dashboard`, employee lands on `/me`
+- [ ] Admin lands on `/dashboard` (employee accounts share the same dashboard in V1 — single workspace for the founder)
 
 Diagnostic signature in dev logs after the `token_hash` switch — a successful
 login must look like:

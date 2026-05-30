@@ -60,7 +60,6 @@ alter table employee_profiles enable row level security;
 alter table compensation enable row level security;
 alter table documents enable row level security;
 alter table leaves enable row level security;
-alter table company_updates enable row level security;
 alter table audit_logs enable row level security;
 alter table analytics_events enable row level security;
 alter table policies enable row level security;
@@ -266,25 +265,6 @@ with check (
 drop policy if exists leaves_update_admin on leaves;
 create policy leaves_update_admin on leaves
 for update
-using (
-  is_current_actor_admin()
-  and tenant_id = current_actor_tenant_id()
-)
-with check (
-  is_current_actor_admin()
-  and tenant_id = current_actor_tenant_id()
-);
-
-drop policy if exists company_updates_select on company_updates;
-create policy company_updates_select on company_updates
-for select
-using (
-  tenant_id = current_actor_tenant_id()
-);
-
-drop policy if exists company_updates_write_admin on company_updates;
-create policy company_updates_write_admin on company_updates
-for all
 using (
   is_current_actor_admin()
   and tenant_id = current_actor_tenant_id()
