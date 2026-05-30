@@ -27,7 +27,8 @@
     "guard:instrumentation": "node scripts/guard-instrumentation.mjs",
     "guard:health-contract": "node scripts/guard-health-contract.mjs",
     "guard:telemetry": "node scripts/guard-telemetry.mjs",
-    "guards": "npm run guard:instrumentation && npm run guard:health-contract && npm run guard:telemetry"
+    "guard:tenancy-filter": "node scripts/guard-tenancy-filter.mjs",
+    "guards": "npm run guard:instrumentation && npm run guard:health-contract && npm run guard:telemetry && npm run guard:tenancy-filter"
   },
   "dependencies": {
     "@sentry/nextjs": "^9.47.1",
